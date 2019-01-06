@@ -12,6 +12,9 @@ import pickle
 import nsml
 import numpy as np
 
+# os.system("pip install sklearn")
+# from sklearn.model_selection import KFold
+
 from nsml import DATASET_PATH
 import keras
 from keras.models import Sequential
@@ -21,6 +24,8 @@ from keras.callbacks import ReduceLROnPlateau
 from keras.applications.mobilenet import MobileNet
 from keras import backend as K
 from data_loader import train_data_loader
+
+np.random.seed(1997)
 
 
 def bind_model(model):
@@ -127,11 +132,18 @@ def preprocess(queries, db):
 
 
 if __name__ == '__main__':
+    EPOCHS = 100
+    BATCH_SIZE = 16
+    VAL_RATIO = 0.15
+    LR = 0.0001
+    REDUCE_STEP = 15
+    REDUCE_FACT = 0.5
+
     args = argparse.ArgumentParser()
 
     # hyperparameters
-    args.add_argument('--epochs', type=int, default=20)
-    args.add_argument('--batch_size', type=int, default=32)
+    args.add_argument('--epochs', type=int, default=EPOCHS)
+    args.add_argument('--batch_size', type=int, default=BATCH_SIZE)
 
     # DONOTCHANGE: They are reserved for nsml
     args.add_argument('--mode', type=str, default='train', help='submit일때 해당값이 test로 설정됩니다.')
@@ -148,31 +160,6 @@ if __name__ == '__main__':
     """ Model """
     model = MobileNet(weights='imagenet', input_shape=input_shape, classes=num_classes)
     model.summary()
-    '''
-    model = Sequential()
-    model.add(Conv2D(32, (3, 3), padding='same', input_shape=input_shape))
-    model.add(Activation('relu'))
-    model.add(Conv2D(32, (3, 3)))
-    model.add(Activation('relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
-
-    model.add(Conv2D(64, (3, 3), padding='same'))
-    model.add(Activation('relu'))
-    model.add(Conv2D(64, (3, 3)))
-    model.add(Activation('relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
-
-    model.add(Flatten())
-    model.add(Dense(512))
-    model.add(Activation('relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(num_classes))
-    model.add(Activation('softmax'))
-    model.summary()
-    '''
-
     bind_model(model)
 
     if config.pause:
@@ -182,8 +169,8 @@ if __name__ == '__main__':
     if config.mode == 'train':
         bTrainmode = True
 
-        """ Initiate RMSprop optimizer """
-        opt = keras.optimizers.Adam(lr=0.0001)
+        """ Initiate Adam optimizer """
+        opt = keras.optimizers.Adam(lr=LR)
         model.compile(loss='categorical_crossentropy',
                       optimizer=opt,
                       metrics=['accuracy'])
@@ -206,27 +193,73 @@ if __name__ == '__main__':
         with open(output_path[1], 'rb') as label_f:
             label_list = pickle.load(label_f)
 
-        x_train = np.asarray(img_list)
+        x_all = np.asarray(img_list)
         labels = np.asarray(label_list)
-        y_train = keras.utils.to_categorical(labels, num_classes=num_classes)
-        x_train = x_train.astype('float32')
-        x_train /= 255
+        y_all = keras.utils.to_categorical(labels, num_classes=num_classes)
+        x_all = x_all.astype('float32')
+        x_all /= 255
         print(len(labels), 'train samples')
 
+        # split train & validation
+        # shuffle
+        s = np.arange(x_all.shape[0])
+        np.random.shuffle(s)
+        x_all = x_all[s]
+        y_all = y_all[s]
+        # split
+        split_i = int(x_all.shape[0] * (1.0 - VAL_RATIO))
+        x_train = x_all[:split_i]
+        y_train = y_all[:split_i]
+        x_val = x_all[split_i:]
+        y_val = y_all[split_i:]
+        print("Train shape:", x_train.shape)
+        print("Validation shape:", x_val.shape)
+
+        ''' K Fold Test
+        kf = KFold(n_splits=10, shuffle=True)
+        for t_i, v_i in kf.split(x_all):
+            print("Validation index:", v_i)
+            x_train, x_val = x_all[t_i], x_all[v_i]
+            y_train, y_val = y_all[t_i], y_all[v_i]
+        '''
+
         """ Callback """
-        monitor = 'acc'
-        reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3, mode='max', factor=0.5, min_lr=1e-10)
+        monitor = 'loss'
+        reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3, mode='min', factor=0.5, min_lr=1e-10)
+
 
         """ Training loop """
+        hist_all = []
         for epoch in range(nb_epoch):
+            # Reduce LR
+            if epoch % REDUCE_STEP == REDUCE_STEP - 1:
+                LR *= REDUCE_FACT
+                print("ReduceLR:", LR)
+                opt = keras.optimizers.Adam(lr=LR)
+                model.compile(loss='categorical_crossentropy',
+                              optimizer=opt,
+                              metrics=['accuracy'])
+
+            # Train
             res = model.fit(x_train, y_train,
                             batch_size=batch_size,
                             initial_epoch=epoch,
                             epochs=epoch + 1,
                             callbacks=[reduce_lr],
+                            validation_data=(x_val, y_val),
                             verbose=1,
                             shuffle=True)
+
+            # save logs
             print(res.history)
+            hist_all.append(res.history)
             train_loss, train_acc = res.history['loss'][0], res.history['acc'][0]
+
+            # save model to nsml
             nsml.report(summary=True, epoch=epoch, epoch_total=nb_epoch, loss=train_loss, acc=train_acc)
             nsml.save(epoch)
+
+        # all logs
+        for i, hist in enumerate(hist_all):
+            print(i, hist)
+
