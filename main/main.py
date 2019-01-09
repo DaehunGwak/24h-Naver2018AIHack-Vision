@@ -86,6 +86,14 @@ def bind_model(model):
         # Calculate cosine similarity
         sim_matrix = np.dot(query_vecs, reference_vecs.T)
 
+        # Choose only one class by query class
+        # sim_matrix = np.zeros((query_vecs.shape[0], reference_vecs.shape[0]))
+        # for q in range(query_vecs.shape[0]):
+        #     now_class = np.argmax(query_vecs[q])
+        #     for r in range(reference_vecs.shape[0]):
+        #         sim_matrix[q][r] = reference_vecs[r][now_class]
+
+
         retrieval_results = {}
 
         for (i, query) in enumerate(queries):
@@ -133,15 +141,16 @@ def preprocess(queries, db):
 
 
 if __name__ == '__main__':
-    REDUCE_MODE = True     # reduce lr mode
-    AUG_MODE = False        # augmentation mode
+    REDUCE_MODE = False     # reduce lr mode
+    AUG_MODE = True        # augmentation mode
     PT_MODE = True          # pre trained(imagenet) mode
 
     EPOCHS = 50
     BATCH_SIZE = 16
     VAL_RATIO = 0.15
-    LR = 0.001
-    REDUCE_STEP = 7
+    FOLD_NUM = 8
+    LR = 0.000025
+    REDUCE_STEP = 10
     REDUCE_FACT = 0.25
 
     args = argparse.ArgumentParser()
@@ -227,7 +236,7 @@ if __name__ == '__main__':
         '''
 
         # K Fold Test
-        kf = StratifiedKFold(n_splits=int(1 / VAL_RATIO), shuffle=True)
+        kf = StratifiedKFold(n_splits=FOLD_NUM, shuffle=True)
         for t_i, v_i in kf.split(x_all, labels):
             x_train, x_val = x_all[t_i], x_all[v_i]
             y_train, y_val = y_all[t_i], y_all[v_i]
@@ -242,6 +251,9 @@ if __name__ == '__main__':
         """ Augmentaion """
         if AUG_MODE:
             datagen = ImageDataGenerator(zoom_range=0.3,
+                                         shear_range=0.3,
+                                         height_shift_range=0.1,
+                                         width_shift_range=0.1,
                                          rotation_range=180,
                                          horizontal_flip=True,
                                          vertical_flip=True)
@@ -285,10 +297,16 @@ if __name__ == '__main__':
             for i, hist in enumerate(hist_all):
                 print(i, hist)
             train_loss, train_acc = res.history['loss'][0], res.history['acc'][0]
-            val_loss, val_acc = res.history['val_loss'][0], res.history['val_acc'][0]
 
             # save model to nsml
             nsml.report(summary=True, epoch=epoch, epoch_total=nb_epoch,
-                        loss=train_loss, acc=train_acc, val_loss=val_loss, val_acc=val_acc)
-            nsml.save(epoch)
+                        loss=train_loss, acc=train_acc)
+            while True:
+                try:
+                    nsml.save(epoch)
+                except:
+                    print("!!! NSML SAVE ERROR !!!, so retry ")
+                    continue
+                break
+
 
