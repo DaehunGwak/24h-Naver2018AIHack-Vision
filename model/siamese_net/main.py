@@ -22,7 +22,7 @@ from keras.applications.mobilenet import MobileNet
 from keras.applications.mobilenetv2 import MobileNetV2
 from keras.preprocessing.image import ImageDataGenerator
 from keras import backend as K
-from keras.layers import merge, Dense, Input, Lambda
+from keras.layers import merge, Dense, Input, Lambda, GlobalMaxPooling2D, Flatten
 from keras.models import  Model
 from data_loader import train_data_loader
 
@@ -155,19 +155,22 @@ def b_init(shape,name=None):
 def genPair(x, y, batch):
     left, limit = 0, x.shape[0]
     x_shape = (batch, x.shape[1], x.shape[2], x.shape[3])
+    # print(x_shape)
     x_all_1 = np.zeros(x_shape)
     for it, x_one in enumerate(x):
         x_all_1[0:batch] = x_one
+        left = 0
         while True:
             right = min(left + batch, limit)
             x_all_2 = x[left:right]
-            Y = np.zeros((right - left + 1, 1))
+            Y = np.zeros((right - left, ))
             for y_i, ii in enumerate(range(left, right)):
                 if (y[it] == y[ii]).all():
-                    Y[y_i][0] = 1.0
+                    Y[y_i] = 1.0
                 else:
-                    Y[y_i][0] = 0.0
-            yield [x_all_1, x_all_2], Y
+                    Y[y_i] = 0.0
+            # print([x_all_1.shape, x_all_2.shape], Y.shape)
+            yield [x_all_1[:right - left], x_all_2], Y
             left = right
             if right == limit:
                 break
@@ -179,7 +182,7 @@ if __name__ == '__main__':
     PT_MODE = False         # pre trained(imagenet) mode
 
     EPOCHS = 5
-    BATCH_SIZE = 16
+    BATCH_SIZE = 64
     VAL_RATIO = 0.14
     FOLD_NUM = 8
     LR = 0.000025
@@ -208,8 +211,12 @@ if __name__ == '__main__':
     left_input = Input(input_shape)
     right_input = Input(input_shape)
     base = MobileNet(weights=None, input_shape=input_shape, include_top=False)
-    base_l = base(left_input)
-    base_r = base(right_input)
+    last = base.output
+    x = GlobalMaxPooling2D()(last)
+    base_model = Model(base.input, x)
+    base_l = base_model(left_input)
+    base_r = base_model(right_input)
+
     # Getting the L1 Distance between the 2 encodings
     L1_layer = Lambda(lambda tensor: K.abs(tensor[0] - tensor[1]))
 
@@ -266,7 +273,13 @@ if __name__ == '__main__':
         x_all /= 255
         print(len(labels), 'train samples')
 
-
+        from collections import defaultdict
+        label_dict = defaultdict(lambda: 0)
+        for yy in labels:
+            label_dict[yy] += 1
+        sorted_by_value = sorted(label_dict.items(), key=lambda kv: kv[1])
+        for step in range(0 , 1000, 10):
+            print(sorted_by_value[step:step+10])
 
         print("Generate data shape:", x_all.shape)
 
@@ -346,20 +359,34 @@ if __name__ == '__main__':
                                           shuffle=True)
             else:
                 res = model.fit_generator(generator=gen_train,
-                                steps_per_epoch=step_train,
+                                steps_per_epoch=10,
                                 initial_epoch=epoch,
                                 epochs=epoch + 1,
                                 callbacks=[reduce_lr],
                                 validation_data=gen_val,
-                                validation_steps=step_val,
+                                validation_steps=10,
                                 verbose=1,
                                 shuffle=True)
+
+
+
 
             # save & print all logs
             hist_all.append(res.history)
             for i, hist in enumerate(hist_all):
                 print(i, hist)
             train_loss, train_acc = res.history['loss'][0], res.history['acc'][0]
+
+            # test predict
+            test_size = 10
+            x_shape = (test_size, input_shape[0], input_shape[1], input_shape[2])
+            x_pivot = np.zeros(x_shape)
+            x_pivot[:test_size] = x_train[0]
+            results = model.predict([x_pivot, x_train[:test_size]])
+            print(type(results))
+            print(results.shape)
+            print(results)
+            print(labels[:test_size])
 
             # save model to nsml
             nsml.report(summary=True, epoch=epoch, epoch_total=nb_epoch,
