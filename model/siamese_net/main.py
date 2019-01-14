@@ -152,6 +152,27 @@ def b_init(shape,name=None):
     return K.variable(values,name=name)
 
 
+def genPair(x, y, batch):
+    left, limit = 0, x.shape[0]
+    x_shape = (batch, x.shape[1], x.shape[2], x.shape[3])
+    x_all_1 = np.zeros(x_shape)
+    for it, x_one in enumerate(x):
+        x_all_1[0:batch] = x_one
+        while True:
+            right = min(left + batch, limit)
+            x_all_2 = x[left:right]
+            Y = np.zeros((right - left + 1, 1))
+            for y_i, ii in enumerate(range(left, right)):
+                if (y[it] == y[ii]).all():
+                    Y[y_i][0] = 1.0
+                else:
+                    Y[y_i][0] = 0.0
+            yield [x_all_1, x_all_2], Y
+            left = right
+            if right == limit:
+                break
+
+
 if __name__ == '__main__':
     REDUCE_MODE = False     # reduce lr mode
     AUG_MODE = False        # augmentation mode
@@ -159,7 +180,7 @@ if __name__ == '__main__':
 
     EPOCHS = 5
     BATCH_SIZE = 16
-    VAL_RATIO = 0.1
+    VAL_RATIO = 0.14
     FOLD_NUM = 8
     LR = 0.000025
     REDUCE_STEP = 10
@@ -238,52 +259,40 @@ if __name__ == '__main__':
         with open(output_path[1], 'rb') as label_f:
             label_list = pickle.load(label_f)
 
-        x_temp = np.asarray(img_list)
+        x_all = np.asarray(img_list)
         labels = np.asarray(label_list)
-        y_temp = keras.utils.to_categorical(labels, num_classes=num_classes)
-        x_temp = x_temp.astype('float32')
-        x_temp /= 255
+        y_all = keras.utils.to_categorical(labels, num_classes=num_classes)
+        x_all = x_all.astype('float32')
+        x_all /= 255
         print(len(labels), 'train samples')
 
-        nums_data = x_temp.shape[0] * x_temp.shape[0]
-        x_all_1 = np.zeros((nums_data, input_shape[0], input_shape[1], input_shape[2]))
-        x_all_2 = np.zeros((nums_data, input_shape[0], input_shape[1], input_shape[2]))
-        y_all = np.zeros((nums_data, 1))
 
-        step = x_temp.shape[0]
-        pivot = 0
-        for i, x in enumerate(x_temp):
-            x_all_1[pivot:pivot + step] = x
-            pivot += step
-        for pivot in range(0, nums_data, step):
-            x_all_2[pivot:pivot + step] = x_temp
-        pivot = 0
-        for i1 in range(step):
-            for i2 in range(step):
-                if y_temp[i1] == y_temp[i2].all():
-                    y_all[step + i2][0] = 1.0
-                else:
-                    y_all[step + i2][0] = 0.0
-            pivot += step
 
-        print("Generate data shape:", x_all_1.shape)
+        print("Generate data shape:", x_all.shape)
 
         # split train & validation
         # shuffle
-        s = np.arange(x_all_1.shape[0])
+        s = np.arange(x_all.shape[0])
         np.random.shuffle(s)
-        x_all_1 = x_all_1[s]
-        x_all_2 = x_all_2[s]
+        x_all = x_all[s]
         y_all = y_all[s]
         labels = labels[s]
         # split
-        split_i = int(x_all_1.shape[0] * (1.0 - VAL_RATIO))
-        x_train_1 = x_all_1[:split_i]
-        x_train_2 = x_all_2[:split_i]
+        split_i = int(x_all.shape[0] * (1.0 - VAL_RATIO))
+        x_train = x_all[:split_i]
         y_train = y_all[:split_i]
-        x_val_1 = x_all_1[split_i:]
-        x_val_2 = x_all_2[split_i:]
+        x_val = x_all[split_i:]
         y_val = y_all[split_i:]
+
+        """ create generator """
+        gen_train = genPair(x_train, y_train, BATCH_SIZE)
+        gen_val = genPair(x_val, y_val, BATCH_SIZE)
+        step_train = int(x_train.shape[0] * x_train.shape[0] / BATCH_SIZE)
+        step_val = int(x_val.shape[0] * x_val.shape[0] / BATCH_SIZE)
+        if (x_train.shape[0] * x_train.shape[0]) % BATCH_SIZE == 0:
+            step_train += 1
+        if (x_val.shape[0] * x_val.shape[0]) % BATCH_SIZE == 0:
+            step_val += 1
 
         # K Fold Test
         '''
@@ -293,8 +302,8 @@ if __name__ == '__main__':
             y_train, y_val = y_all[t_i], y_all[v_i]
             break
         '''
-        print("Train shape:", x_train_1.shape)
-        print("Validation shape:", x_val_1.shape)
+        print("Train shape:", x_train.shape)
+        print("Validation shape:", x_val.shape)
 
         """ Callback """
         monitor = 'loss'
@@ -327,21 +336,22 @@ if __name__ == '__main__':
 
             # Train : 아직 어그 모드 개발해야함
             if AUG_MODE:
-                res = model.fit_generator(generator=datagen.flow(x_train_1, y_train, batch_size=batch_size),
-                                          steps_per_epoch=x_train_1.shape[0],
+                res = model.fit_generator(generator=datagen.flow(x_train, y_train, batch_size=batch_size),
+                                          steps_per_epoch=x_train.shape[0],
                                           initial_epoch=epoch,
                                           epochs=epoch + 1,
                                           callbacks=[reduce_lr],
-                                          validation_data=(x_val_1, y_val),
+                                          validation_data=(x_val, y_val),
                                           verbose=1,
                                           shuffle=True)
             else:
-                res = model.fit([x_train_1, x_train_2], y_train,
-                                batch_size=batch_size,
+                res = model.fit_generator(generator=gen_train,
+                                steps_per_epoch=step_train,
                                 initial_epoch=epoch,
                                 epochs=epoch + 1,
                                 callbacks=[reduce_lr],
-                                validation_data=([x_val_1, x_val_2], y_val),
+                                validation_data=gen_val,
+                                validation_steps=step_val,
                                 verbose=1,
                                 shuffle=True)
 
