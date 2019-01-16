@@ -60,6 +60,7 @@ def bind_model(model):
         reference_img = reference_img.astype('float32')
         reference_img /= 255
 
+        """
         get_feature_layer = K.function([model.layers[0].input] + [K.learning_phase()], [model.layers[-1].output])
 
         print('inference start')
@@ -82,9 +83,10 @@ def bind_model(model):
         # l2 normalization
         query_vecs = l2_normalize(query_vecs)
         reference_vecs = l2_normalize(reference_vecs)
-
+        
         # Calculate cosine similarity
         sim_matrix = np.dot(query_vecs, reference_vecs.T)
+        """
 
         # Choose only one class by query class
         # sim_matrix = np.zeros((query_vecs.shape[0], reference_vecs.shape[0]))
@@ -93,8 +95,19 @@ def bind_model(model):
         #     for r in range(reference_vecs.shape[0]):
         #         sim_matrix[q][r] = reference_vecs[r][now_class]
 
+        """ predict """
+        sim_matrix = np.zeros((query_img.shape[0], reference_img.shape[0]))
+        # test predict
+        input_shape = (224, 224, 3)
+        x_shape = (reference_img.shape[0], input_shape[0], input_shape[1], input_shape[2])
+        x_pivot = np.zeros(x_shape)
+        for ix, x_one in enumerate(query_img):
+            x_pivot[:-1] = x_one
+            sim_matrix[ix] = model.predict([x_pivot, reference_img]).T[0]
 
+        """ parsing results """
         retrieval_results = {}
+
 
         for (i, query) in enumerate(queries):
             query = query.split('/')[-1].split('.')[0]
@@ -181,7 +194,11 @@ if __name__ == '__main__':
     AUG_MODE = False        # augmentation mode
     PT_MODE = False         # pre trained(imagenet) mode
 
-    EPOCHS = 5
+    TRAIN_STEP = 1000   # 100 step is full training 1 query
+    VAL_STEP = 100
+
+    EPOCHS = 10
+    EPOCHS = 300 // (TRAIN_STEP // 100)
     BATCH_SIZE = 64
     VAL_RATIO = 0.14
     FOLD_NUM = 8
@@ -359,12 +376,12 @@ if __name__ == '__main__':
                                           shuffle=True)
             else:
                 res = model.fit_generator(generator=gen_train,
-                                steps_per_epoch=10,
+                                steps_per_epoch=TRAIN_STEP,
                                 initial_epoch=epoch,
                                 epochs=epoch + 1,
                                 callbacks=[reduce_lr],
                                 validation_data=gen_val,
-                                validation_steps=10,
+                                validation_steps=VAL_STEP,
                                 verbose=1,
                                 shuffle=True)
 
@@ -376,21 +393,11 @@ if __name__ == '__main__':
             for i, hist in enumerate(hist_all):
                 print(i, hist)
             train_loss, train_acc = res.history['loss'][0], res.history['acc'][0]
-
-            # test predict
-            test_size = 10
-            x_shape = (test_size, input_shape[0], input_shape[1], input_shape[2])
-            x_pivot = np.zeros(x_shape)
-            x_pivot[:test_size] = x_train[0]
-            results = model.predict([x_pivot, x_train[:test_size]])
-            print(type(results))
-            print(results.shape)
-            print(results)
-            print(labels[:test_size])
+            val_loss, val_acc = res.history['val_loss'][0], res.history['val_acc'][0]
 
             # save model to nsml
             nsml.report(summary=True, epoch=epoch, epoch_total=nb_epoch,
-                        loss=train_loss, acc=train_acc)
+                        loss=val_loss, acc=val_acc)
             while True:
                 try:
                     nsml.save(epoch)
