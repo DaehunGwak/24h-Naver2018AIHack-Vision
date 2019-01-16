@@ -99,11 +99,12 @@ def bind_model(model):
         sim_matrix = np.zeros((query_img.shape[0], reference_img.shape[0]))
         # test predict
         input_shape = (224, 224, 3)
-        x_shape = (reference_img.shape[0], input_shape[0], input_shape[1], input_shape[2])
-        x_pivot = np.zeros(x_shape)
-        for ix, x_one in enumerate(query_img):
-            x_pivot[:-1] = x_one
-            sim_matrix[ix] = model.predict([x_pivot, reference_img]).T[0]
+        x_shape = (1, input_shape[0], input_shape[1], input_shape[2])
+        for iq, x_q in enumerate(query_img):
+            x_qr = x_q.reshape(x_shape)
+            for ir, x_r in enumerate(reference_img):
+                x_rr = x_r.reshape(x_shape)
+                sim_matrix[iq][ir] = model.predict([x_qr, x_rr])[0]
 
         """ parsing results """
         retrieval_results = {}
@@ -198,9 +199,9 @@ if __name__ == '__main__':
     VAL_STEP = 100
 
     EPOCHS = 10
-    EPOCHS = 300 // (TRAIN_STEP // 100)
+    EPOCHS = 6100 // (TRAIN_STEP // 100)
     BATCH_SIZE = 64
-    VAL_RATIO = 0.14
+    VAL_RATIO = 0.05
     FOLD_NUM = 8
     LR = 0.000025
     REDUCE_STEP = 10
@@ -227,7 +228,7 @@ if __name__ == '__main__':
     """ Model """
     left_input = Input(input_shape)
     right_input = Input(input_shape)
-    base = MobileNet(weights=None, input_shape=input_shape, include_top=False)
+    base = MobileNet(weights="imagenet", input_shape=input_shape, include_top=False)
     last = base.output
     x = GlobalMaxPooling2D()(last)
     base_model = Model(base.input, x)
