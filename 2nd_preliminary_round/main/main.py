@@ -13,7 +13,7 @@ import nsml
 import numpy as np
 
 # os.system("pip install sklearn")
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from nsml import DATASET_PATH
 import keras
@@ -55,10 +55,8 @@ def bind_model(model):
 
         query_img = query_img.astype('float32')
         query_img /= 255
-        query_img = 1 - query_img # 색반전
         reference_img = reference_img.astype('float32')
         reference_img /= 255
-        reference_img = 1 - reference_img # 색반전
 
         get_feature_layer = K.function([model.layers[0].input] + [K.learning_phase()], [model.layers[-1].output])
 
@@ -85,6 +83,8 @@ def bind_model(model):
 
         # Calculate cosine similarity
         sim_matrix = np.dot(query_vecs, reference_vecs.T)
+        indices = np.argsort(sim_matrix, axis=1)
+        indices = np.flip(indices, axis=1)
 
         # Choose only one class by query class
         # sim_matrix = np.zeros((query_vecs.shape[0], reference_vecs.shape[0]))
@@ -98,12 +98,10 @@ def bind_model(model):
 
         for (i, query) in enumerate(queries):
             query = query.split('/')[-1].split('.')[0]
-            sim_list = zip(references, sim_matrix[i].tolist())
-            sorted_sim_list = sorted(sim_list, key=lambda x: x[1], reverse=True)
-
-            ranked_list = [k.split('/')[-1].split('.')[0] for (k, v) in sorted_sim_list]  # ranked list
-
+            ranked_list = [references[k].split('/')[-1].split('.')[0] for k in indices[i]]  # ranked list
+            ranked_list = ranked_list[:1000]
             retrieval_results[query] = ranked_list
+
         print('done')
 
         return list(zip(range(len(retrieval_results)), retrieval_results.items()))
@@ -142,12 +140,12 @@ def preprocess(queries, db):
 
 if __name__ == '__main__':
     REDUCE_MODE = False     # reduce lr mode
-    AUG_MODE = True        # augmentation mode
-    PT_MODE = True          # pre trained(imagenet) mode
+    AUG_MODE = False        # augmentation mode
+    PT_MODE = False          # pre trained(imagenet) mode
 
     EPOCHS = 50
     BATCH_SIZE = 16
-    VAL_RATIO = 0.15
+    VAL_RATIO = 0.10
     FOLD_NUM = 8
     LR = 0.000025
     REDUCE_STEP = 10
@@ -168,7 +166,8 @@ if __name__ == '__main__':
     # training parameters
     nb_epoch = config.epochs
     batch_size = config.batch_size
-    num_classes = 1000
+    num_classes = 1383
+    num_total = 73551
     input_shape = (224, 224, 3)  # input image shape
 
     """ Model """
@@ -198,51 +197,12 @@ if __name__ == '__main__':
         output_path = ['./img_list.pkl', './label_list.pkl']
         train_dataset_path = DATASET_PATH + '/train/train_data'
 
-        if nsml.IS_ON_NSML:
-            # Caching file
-            nsml.cache(train_data_loader, data_path=train_dataset_path, img_size=input_shape[:2],
-                       output_path=output_path)
-        else:
-            # local에서 실험할경우 dataset의 local-path 를 입력해주세요.
-            train_data_loader(train_dataset_path, input_shape[:2], output_path=output_path)
-
-        with open(output_path[0], 'rb') as img_f:
-            img_list = pickle.load(img_f)
-        with open(output_path[1], 'rb') as label_f:
-            label_list = pickle.load(label_f)
-
-        x_all = np.asarray(img_list)
-        labels = np.asarray(label_list)
-        y_all = keras.utils.to_categorical(labels, num_classes=num_classes)
-        x_all = x_all.astype('float32')
-        x_all /= 255
-        x_all = 1 - x_all  # 색 반전
-        print(len(labels), 'train samples')
-
-        # split train & validation
-        # shuffle
-        s = np.arange(x_all.shape[0])
-        np.random.shuffle(s)
-        x_all = x_all[s]
-        y_all = y_all[s]
-        labels = labels[s]
-        # split
-        '''
-        split_i = int(x_all.shape[0] * (1.0 - VAL_RATIO))
-        x_train = x_all[:split_i]
-        y_train = y_all[:split_i]
-        x_val = x_all[split_i:]
-        y_val = y_all[split_i:]
-        '''
-
-        # K Fold Test
-        kf = StratifiedKFold(n_splits=FOLD_NUM, shuffle=True)
-        for t_i, v_i in kf.split(x_all, labels):
-            x_train, x_val = x_all[t_i], x_all[v_i]
-            y_train, y_val = y_all[t_i], y_all[v_i]
-            break
-        print("Train shape:", x_train.shape)
-        print("Validation shape:", x_val.shape)
+        """ Create Generator """
+        datagen = ImageDataGenerator(rescale=1./255., validation_split=VAL_RATIO)
+        train_gen = datagen.flow_from_directory(train_dataset_path, target_size=input_shape[:2],
+                                                batch_size=BATCH_SIZE, subset="training")
+        val_gen = datagen.flow_from_directory(train_dataset_path, target_size=input_shape[:2],
+                                              batch_size=BATCH_SIZE, subset="validation")
 
         """ Callback """
         monitor = 'loss'
@@ -283,14 +243,14 @@ if __name__ == '__main__':
                                           verbose=1,
                                           shuffle=True)
             else:
-                res = model.fit(x_train, y_train,
-                                batch_size=batch_size,
-                                initial_epoch=epoch,
-                                epochs=epoch + 1,
-                                callbacks=[reduce_lr],
-                                validation_data=(x_val, y_val),
-                                verbose=1,
-                                shuffle=True)
+                res = model.fit_generator(train_gen,
+                                          steps_per_epoch=(num_total * (1 - VAL_RATIO)) // BATCH_SIZE,
+                                          initial_epoch=epoch,
+                                          epochs=epoch + 1,
+                                          callbacks=[reduce_lr],
+                                          validation_data=val_gen,
+                                          validation_steps=(num_total * VAL_RATIO) // BATCH_SIZE,
+                                          verbose=1)
 
             # save & print all logs
             hist_all.append(res.history)
