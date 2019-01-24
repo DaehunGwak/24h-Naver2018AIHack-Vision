@@ -38,64 +38,33 @@ def bind_model(model):
         print('model loaded!')
 
     def infer(queries, db):
+        input_shape = (224, 224, 3)
 
-        # Query 개수: 195
-        # Reference(DB) 개수: 1,127
-        # Total (query + reference): 1,322
+        """ create generator """
+        datagen = ImageDataGenerator(rescale=1. / 255.)
+        query_gen = datagen.flow_from_directory('/'.join(queries[0].split("/")[:-2]),
+                                                classes=['query'], target_size=input_shape[:2])
+        ref_gen = datagen.flow_from_directory('/'.join(db[0].split("/")[:-2]),
+                                              classes=['reference'], target_size=input_shape[:2])
 
-        queries, query_img, references, reference_img = preprocess(queries, db)
-
-        print('test data load queries {} query_img {} references {} reference_img {}'.
-              format(len(queries), len(query_img), len(references), len(reference_img)))
-
+        """ type cast to numpy """
         queries = np.asarray(queries)
-        query_img = np.asarray(query_img)
-        references = np.asarray(references)
-        reference_img = np.asarray(reference_img)
+        references = np.asarray(db)
 
-        query_img = query_img.astype('float32')
-        query_img /= 255
-        reference_img = reference_img.astype('float32')
-        reference_img /= 255
-
-        get_feature_layer = K.function([model.layers[0].input] + [K.learning_phase()], [model.layers[-1].output])
-
+        """ inference """
         print('inference start')
-
-        # inference
-        query_vecs = get_feature_layer([query_img, 0])[0]
+        query_vecs = model.predict_generator(query_gen, steps=len(query_gen))
         print("query shape:", query_vecs.shape)
-
-        # caching db output, db inference
-        db_output = './db_infer.pkl'
-        if os.path.exists(db_output):
-            with open(db_output, 'rb') as f:
-                reference_vecs = pickle.load(f)
-        else:
-            reference_vecs = get_feature_layer([reference_img, 0])[0]
-            with open(db_output, 'wb') as f:
-                pickle.dump(reference_vecs, f)
+        reference_vecs = model.predict_generator(ref_gen, steps=len(ref_gen))
         print("ref shape:", reference_vecs.shape)
 
-        # l2 normalization
-        query_vecs = l2_normalize(query_vecs)
-        reference_vecs = l2_normalize(reference_vecs)
-
-        # Calculate cosine similarity
+        """ Calculate cosine similarity """
         sim_matrix = np.dot(query_vecs, reference_vecs.T)
         indices = np.argsort(sim_matrix, axis=1)
         indices = np.flip(indices, axis=1)
 
-        # Choose only one class by query class
-        # sim_matrix = np.zeros((query_vecs.shape[0], reference_vecs.shape[0]))
-        # for q in range(query_vecs.shape[0]):
-        #     now_class = np.argmax(query_vecs[q])
-        #     for r in range(reference_vecs.shape[0]):
-        #         sim_matrix[q][r] = reference_vecs[r][now_class]
-
-
+        """ Parsing Results """
         retrieval_results = {}
-
         for (i, query) in enumerate(queries):
             query = query.split('/')[-1].split('.')[0]
             ranked_list = [references[k].split('/')[-1].split('.')[0] for k in indices[i]]  # ranked list
@@ -147,7 +116,7 @@ if __name__ == '__main__':
     BATCH_SIZE = 16
     VAL_RATIO = 0.10
     FOLD_NUM = 8
-    LR = 0.000025
+    LR = 0.00005
     REDUCE_STEP = 10
     REDUCE_FACT = 0.25
 
@@ -244,12 +213,12 @@ if __name__ == '__main__':
                                           shuffle=True)
             else:
                 res = model.fit_generator(train_gen,
-                                          steps_per_epoch=(num_total * (1 - VAL_RATIO)) // BATCH_SIZE,
+                                          steps_per_epoch=len(train_gen),
                                           initial_epoch=epoch,
                                           epochs=epoch + 1,
                                           callbacks=[reduce_lr],
                                           validation_data=val_gen,
-                                          validation_steps=(num_total * VAL_RATIO) // BATCH_SIZE,
+                                          validation_steps=len(val_gen),
                                           verbose=1)
 
             # save & print all logs
