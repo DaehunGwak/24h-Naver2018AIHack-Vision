@@ -121,7 +121,7 @@ if __name__ == '__main__':
     # training parameters
     val_ratio = 0.1
     learning_rate = 0.00045
-    nb_epoch = 10
+    nb_epoch = 20
     batch_size = config.batch_size
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape

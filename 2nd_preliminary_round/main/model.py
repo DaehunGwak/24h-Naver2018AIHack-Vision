@@ -2,7 +2,7 @@ import numpy as np
 import keras.backend as K
 from keras.models import Sequential, Model
 from keras.layers import Dense, Dropout, Flatten, Activation
-from keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D, Reshape, Dropout
+from keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D, Reshape, Dropout, BatchNormalization
 from keras.applications.mobilenet import MobileNet
 
 
@@ -16,6 +16,7 @@ def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
     """
     base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
     x = base_model.output
+    x = BatchNormalization()(x)
     x = GlobalAveragePooling2D()(x)
     #  = Reshape([-1, 1, 1024])(x)
     x = Dropout(0.2)(x)
