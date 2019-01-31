@@ -1,12 +1,37 @@
 import numpy as np
+import keras.backend as K
+from keras.models import Sequential, Model
+from keras.layers import Dense, Dropout, Flatten, Activation
+from keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D, Reshape
+from keras.layers import Dropout, BatchNormalization, Lambda, Input
+from keras.applications.mobilenet import MobileNet
+from keras.applications.resnet50 import ResNet50
 
-from keras.applications import MobileNet
-from keras import backend as K
-from keras.models import Model
-from keras.layers import GlobalAveragePooling2D, Input, Dropout, Dense, Lambda
+
+def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
+    """
+    공인 CNN 불러오기
+    :param input_shape:
+    :param num_classes:
+    :param weight_mode:
+    :return:
+    """
+    base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
+    x = base_model.output
+    x = BatchNormalization()(x)
+    x = GlobalAveragePooling2D()(x)
+    #  = Reshape([-1, 1, 1024])(x)
+    x = Dropout(0.2)(x)
+    # x = Conv2D(num_classes, kernel_size=[1, 1])(x)
+    x = Dense(num_classes)(x)
+    # x = Flatten()(x)
+    x = Activation(activation='softmax', name='output_layer')(x)
+    model = Model(base_model.input, x)
+    return model
 
 
-def get_model(input_shape=(224, 224, 3), embedding_dim=50, weight_mode=None):
+
+def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=100, weight_mode=None):
     """
     샴 네트워크를 위해 임베딩 모델과, 트레플렛 학습용 모델을 얻을 수 있다.
     ## 용어정리
@@ -18,13 +43,17 @@ def get_model(input_shape=(224, 224, 3), embedding_dim=50, weight_mode=None):
     :param weight_mode: 'imagenet'을 입력하면 pretrained 모델을 사용할 수 있다.
     :return: embedding_model, triplet_model(a, p, n)
     """
-    base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
+    base_model = ResNet50(weights=weight_mode, include_top=False, input_shape=input_shape)
 
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
+    x = BatchNormalization()(x)
     x = Dropout(0.2)(x)
+    x = Dense(2048)(x)
+    x = Activation(activation="relu")(x)
+    x = BatchNormalization()(x)
     x = Dense(embedding_dim)(x)
-    x = Lambda(lambda x: K.l2_normalize(x, axis=1))(x)
+    x = Lambda(lambda _x: K.l2_normalize(_x, axis=1), name="output_layer")(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
     anchor_input = Input(input_shape, name='anchor_input')
