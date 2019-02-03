@@ -15,7 +15,8 @@ import keras
 from keras.models import Model
 from keras.callbacks import ReduceLROnPlateau
 from keras.preprocessing.image import ImageDataGenerator
-from model import get_model
+from model import *
+
 
 def bind_model(model):
     def save(dir_name):
@@ -40,8 +41,8 @@ def bind_model(model):
         queries, query_vecs, references, reference_vecs = get_feature(model, queries, db)
 
         # l2 normalization
-        query_vecs = l2_normalize(query_vecs)
-        reference_vecs = l2_normalize(reference_vecs)
+        # query_vecs = l2_normalize(query_vecs)
+        # reference_vecs = l2_normalize(reference_vecs)
 
         # Calculate cosine similarity
         sim_matrix = np.dot(query_vecs, reference_vecs.T)
@@ -75,7 +76,7 @@ def get_feature(model, queries, db):
     img_size = (224, 224)
     test_path = DATASET_PATH + '/test/test_data'
 
-    intermediate_layer_model = Model(inputs=model.input, outputs=model.get_layer('output_layer').output)
+    # intermediate_layer_model = Model(inputs=model.input, outputs=model.output)
     test_datagen = ImageDataGenerator(rescale=1. / 255, dtype='float32')
     query_generator = test_datagen.flow_from_directory(
         directory=test_path,
@@ -86,7 +87,7 @@ def get_feature(model, queries, db):
         class_mode=None,
         shuffle=False
     )
-    query_vecs = intermediate_layer_model.predict_generator(query_generator, steps=len(query_generator), verbose=1)
+    query_vecs = model.predict_generator(query_generator, steps=len(query_generator), verbose=1)
 
     reference_generator = test_datagen.flow_from_directory(
         directory=test_path,
@@ -97,7 +98,7 @@ def get_feature(model, queries, db):
         class_mode=None,
         shuffle=False
     )
-    reference_vecs = intermediate_layer_model.predict_generator(reference_generator, steps=len(reference_generator),
+    reference_vecs = model.predict_generator(reference_generator, steps=len(reference_generator),
                                                                 verbose=1)
 
     return queries, query_vecs, db, reference_vecs
@@ -121,15 +122,16 @@ if __name__ == '__main__':
     # training parameters
     val_ratio = 0.1
     learning_rate = 0.00045
-    nb_epoch = 20
-    batch_size = config.batch_size
+    nb_epoch = 50
+    batch_size = 16
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape
 
     """ Model """
-    model = get_model(input_shape=input_shape, num_classes=num_classes, weight_mode=None)
+    embedding_model, model = get_siamese_model(input_shape=input_shape, embedding_dim=50, weight_mode='imagenet')
+    embedding_model.summary()
     model.summary()
-    bind_model(model)
+    bind_model(embedding_model)
 
     if config.pause:
         nsml.paused(scope=locals())
@@ -139,8 +141,8 @@ if __name__ == '__main__':
         bTrainmode = True
 
         """ Initiate Adam optimizer """
-        opt = keras.optimizers.Adam(lr=learning_rate)
-        model.compile(loss='categorical_crossentropy',
+        opt = keras.optimizers.Adam()
+        model.compile(loss=None,
                       optimizer=opt,
                       metrics=['accuracy'])
 
@@ -149,13 +151,12 @@ if __name__ == '__main__':
         train_datagen = ImageDataGenerator(
             rescale=1. / 255,
             validation_split=val_ratio,
-            shear_range=0.2,
-            zoom_range=0.2,
-            horizontal_flip=True
+            # shear_range=0.2,
+            # zoom_range=0.2,
+            # horizontal_flip=True
         )
-        train_generator = train_datagen.flow_from_directory(
+        train_gen = train_datagen.flow_from_directory(
             directory=DATASET_PATH + '/train/train_data',
-            subset='training',
             target_size=input_shape[:2],
             color_mode="rgb",
             batch_size=batch_size,
@@ -163,78 +164,45 @@ if __name__ == '__main__':
             shuffle=True,
             seed=42
         )
-        val_generator = train_datagen.flow_from_directory(
-            directory=DATASET_PATH + '/train/train_data',
-            subset='validation',
-            target_size=input_shape[:2],
-            color_mode="rgb",
-            batch_size=batch_size,
-            class_mode="categorical",
-            shuffle=True,
-            seed=42
-        )
-        print(train_generator.class_indices)
-        class_list = list(train_generator.class_indices.keys())
         TRAIN_PATH = DATASET_PATH + '/train/train_data/'
-        class_dict = dict()
-        for i, c in enumerate(class_list):
-            test_generator1 = train_datagen.flow_from_directory(
-                directory=DATASET_PATH + '/train/train_data',
-                subset='training',
-                classes=[c],
-                target_size=input_shape[:2],
-                color_mode="rgb",
-                batch_size=batch_size,
-                class_mode="categorical",
-                shuffle=True,
-                seed=42
-            )
-            test_generator2 = train_datagen.flow_from_directory(
-                directory=DATASET_PATH + '/train/train_data',
-                subset='validation',
-                classes=[c],
-                target_size=input_shape[:2],
-                color_mode="rgb",
-                batch_size=batch_size,
-                class_mode="categorical",
-                shuffle=True,
-                seed=42
-            )
-            class_dict[c] = (len(test_generator1.filenames), len(test_generator2.filenames))
-            if i % 100 == 0:
-                print("done", i, "\n")
-        from pprint import pprint
-        sorted_dict = sorted(class_dict.items(), key=lambda item: item[1][1])
-        pprint(sorted_dict)
+        train_generator = generate_samples(train_datagen, train_gen, batch_size, TRAIN_PATH,
+                                           num_classes=num_classes,
+                                           input_shape=input_shape,
+                                           train_mode="training")
+        val_generator = generate_samples(train_datagen, train_gen, batch_size, TRAIN_PATH,
+                                         num_classes=num_classes,
+                                         input_shape=input_shape,
+                                         train_mode="validation",
+                                         class_mode=True)
 
-
-        '''
         """ Callback """
         monitor = 'acc'
         reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3)
 
         """ Training loop """
-        STEP_SIZE_TRAIN = train_generator.n // train_generator.batch_size
+        STEP_SIZE_TRAIN = num_classes // batch_size
         t0 = time.time()
         hist_all = []
         for epoch in range(nb_epoch):
             t1 = time.time()
             res = model.fit_generator(generator=train_generator,
-                                      steps_per_epoch=len(train_generator),
+                                      steps_per_epoch=STEP_SIZE_TRAIN,
                                       validation_data=val_generator,
-                                      validation_steps=len(val_generator),
+                                      validation_steps=5,
                                       initial_epoch=epoch,
                                       epochs=epoch + 1,
-                                      callbacks=[reduce_lr],
                                       verbose=1,
-                                      shuffle=True)
+                                      shuffle=True,
+                                      max_queue_size=1,
+                                      workers=0,
+                                      use_multiprocessing=False)
             t2 = time.time()
             hist_all.append(res.history)
             for i, hist in enumerate(hist_all):
                 print(i, hist)
             print('Training time for one epoch : %.1f' % (t2 - t1))
-            train_loss, train_acc = res.history['loss'][0], res.history['acc'][0]
-            nsml.report(summary=True, epoch=epoch, epoch_total=nb_epoch, loss=train_loss, acc=train_acc)
+            train_loss = res.history['loss'][0]
+            nsml.report(summary=True, epoch=epoch, epoch_total=nb_epoch, loss=train_loss)
             while True:
                 try:
                     nsml.save(epoch)
@@ -243,4 +211,4 @@ if __name__ == '__main__':
                     continue
                 break
         print('Total training time : %.1f' % (time.time() - t0))
-        '''
+
