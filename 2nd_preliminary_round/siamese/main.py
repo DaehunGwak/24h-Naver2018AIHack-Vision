@@ -15,6 +15,7 @@ import keras
 from keras.models import Model
 from keras.callbacks import ReduceLROnPlateau
 from keras.preprocessing.image import ImageDataGenerator
+from sklearn.metrics.pairwise import euclidean_distances
 from model import *
 
 
@@ -45,9 +46,10 @@ def bind_model(model):
         reference_vecs = l2_normalize(reference_vecs)
 
         # Calculate cosine similarity
-        sim_matrix = np.dot(query_vecs, reference_vecs.T)
+        sim_matrix = euclidean_distances(query_vecs, reference_vecs)
+        sim_matrix = sim_matrix * sim_matrix
         indices = np.argsort(sim_matrix, axis=1)
-        indices = np.flip(indices, axis=1)
+        # indices = np.flip(indices, axis=1)
 
         retrieval_results = {}
 
@@ -132,6 +134,7 @@ if __name__ == '__main__':
     embedding_model, model = get_siamese_model(input_shape=input_shape, embedding_dim=2048, weight_mode='imagenet')
     embedding_model.summary()
     model.summary()
+    set_embedding_model(embedding_model)
     bind_model(embedding_model)
 
     if config.pause:
