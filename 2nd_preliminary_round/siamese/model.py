@@ -10,6 +10,18 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.mobilenet import MobileNet
 from keras.applications.resnet50 import ResNet50
 
+g_embedding_model = None
+
+
+def set_embedding_model(model):
+    global g_embedding_model
+    try:
+        g_embedding_model = model
+    except:
+        return False
+    return True
+
+
 def subblock(x, filter, **kwargs):
     x = BatchNormalization()()
     y = x
@@ -21,6 +33,7 @@ def subblock(x, filter, **kwargs):
     y = Add()([x, y])
     y = Activation('relu')(y)
     return y
+
 
 def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
     """
@@ -160,6 +173,7 @@ def del_empty_class(image_gen, class_list, input_shape=(224, 224, 3), batch_size
 
 def generate_samples(image_gen, flow_dir, batch_size=32, path=".", num_classes=1383, input_shape=(224, 224, 3),
                      class_mode=False, train_mode=None):
+    global g_embedding_model
     class_list = list(flow_dir.class_indices.keys())
     if train_mode == 'validation':
         class_list = del_empty_class(image_gen, class_list, input_shape=input_shape, batch_size=batch_size,
