@@ -41,8 +41,8 @@ def bind_model(model):
         queries, query_vecs, references, reference_vecs = get_feature(model, queries, db)
 
         # l2 normalization
-        # query_vecs = l2_normalize(query_vecs)
-        # reference_vecs = l2_normalize(reference_vecs)
+        query_vecs = l2_normalize(query_vecs)
+        reference_vecs = l2_normalize(reference_vecs)
 
         # Calculate cosine similarity
         sim_matrix = np.dot(query_vecs, reference_vecs.T)
@@ -109,7 +109,7 @@ if __name__ == '__main__':
 
     # hyperparameters
     args.add_argument('--epoch', type=int, default=5)
-    args.add_argument('--batch_size', type=int, default=64)
+    args.add_argument('--batch_size', type=int, default=32)
     args.add_argument('--num_classes', type=int, default=1383)
 
     # DONOTCHANGE: They are reserved for nsml
@@ -120,15 +120,16 @@ if __name__ == '__main__':
     config = args.parse_args()
 
     # training parameters
+    val_mode = True
     val_ratio = 0.1
-    learning_rate = 0.00045
-    nb_epoch = 50
-    batch_size = 16
+    learning_rate = 0.00005
+    nb_epoch = 150
+    batch_size = 32
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape
 
     """ Model """
-    embedding_model, model = get_siamese_model(input_shape=input_shape, embedding_dim=50, weight_mode='imagenet')
+    embedding_model, model = get_siamese_model(input_shape=input_shape, embedding_dim=2048, weight_mode='imagenet')
     embedding_model.summary()
     model.summary()
     bind_model(embedding_model)
@@ -141,20 +142,23 @@ if __name__ == '__main__':
         bTrainmode = True
 
         """ Initiate Adam optimizer """
-        opt = keras.optimizers.Adam()
+        opt = keras.optimizers.Adam(lr=learning_rate)
         model.compile(loss=None,
                       optimizer=opt,
                       metrics=['accuracy'])
 
         print('dataset path', DATASET_PATH)
 
-        train_datagen = ImageDataGenerator(
-            rescale=1. / 255,
-            validation_split=val_ratio,
-            # shear_range=0.2,
-            # zoom_range=0.2,
-            # horizontal_flip=True
-        )
+        if val_mode:
+            train_datagen = ImageDataGenerator(
+                rescale=1. / 255,
+                validation_split=val_ratio
+            )
+        else:
+            train_datagen = ImageDataGenerator(
+                rescale=1. / 255
+            )
+
         train_gen = train_datagen.flow_from_directory(
             directory=DATASET_PATH + '/train/train_data',
             target_size=input_shape[:2],
@@ -169,15 +173,16 @@ if __name__ == '__main__':
                                            num_classes=num_classes,
                                            input_shape=input_shape,
                                            train_mode="training")
-        val_generator = generate_samples(train_datagen, train_gen, batch_size, TRAIN_PATH,
-                                         num_classes=num_classes,
-                                         input_shape=input_shape,
-                                         train_mode="validation",
-                                         class_mode=True)
+        if val_mode:
+            val_generator = generate_samples(train_datagen, train_gen, batch_size, TRAIN_PATH,
+                                             num_classes=num_classes,
+                                             input_shape=input_shape,
+                                             train_mode="validation",
+                                             class_mode=True)
 
         """ Callback """
-        monitor = 'acc'
-        reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3)
+        # monitor = 'acc'
+        # reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3)
 
         """ Training loop """
         STEP_SIZE_TRAIN = num_classes // batch_size
@@ -185,17 +190,28 @@ if __name__ == '__main__':
         hist_all = []
         for epoch in range(nb_epoch):
             t1 = time.time()
-            res = model.fit_generator(generator=train_generator,
-                                      steps_per_epoch=STEP_SIZE_TRAIN,
-                                      validation_data=val_generator,
-                                      validation_steps=5,
-                                      initial_epoch=epoch,
-                                      epochs=epoch + 1,
-                                      verbose=1,
-                                      shuffle=True,
-                                      max_queue_size=1,
-                                      workers=0,
-                                      use_multiprocessing=False)
+            if val_mode:
+                res = model.fit_generator(generator=train_generator,
+                                          steps_per_epoch=STEP_SIZE_TRAIN,
+                                          validation_data=val_generator,
+                                          validation_steps=5,
+                                          initial_epoch=epoch,
+                                          epochs=epoch + 1,
+                                          verbose=1,
+                                          shuffle=True,
+                                          max_queue_size=1,
+                                          workers=0,
+                                          use_multiprocessing=False)
+            else:
+                res = model.fit_generator(generator=train_generator,
+                                          steps_per_epoch=STEP_SIZE_TRAIN,
+                                          initial_epoch=epoch,
+                                          epochs=epoch + 1,
+                                          verbose=1,
+                                          shuffle=True,
+                                          max_queue_size=1,
+                                          workers=0,
+                                          use_multiprocessing=False)
             t2 = time.time()
             hist_all.append(res.history)
             for i, hist in enumerate(hist_all):
