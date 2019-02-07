@@ -159,7 +159,7 @@ if __name__ == '__main__':
     aug_mode = False
     val_mode = False
     val_ratio = 0.1
-    learning_rate = 0.00001
+    learning_rate = 0.000025
     nb_epoch = config.nb_epoch
     batch_size = 32
     num_classes = config.num_classes
