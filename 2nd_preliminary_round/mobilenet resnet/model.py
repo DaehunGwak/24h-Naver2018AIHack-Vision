@@ -1,5 +1,3 @@
-import threading
-
 import numpy as np
 import keras.backend as K
 from keras.models import Sequential, Model
@@ -69,9 +67,11 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=1024, weight_mode
     :param weight_mode: 'imagenet'을 입력하면 pretrained 모델을 사용할 수 있다.
     :return: embedding_model, triplet_model(a, p, n)
     """
-
-    mobile_base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
-    resnet_base_model = ResNet50(weights=weight_mode, include_top=False, input_shape=input_shape)
+    input_layer = Input(shape=input_shape)
+    mobile_base_model = MobileNet(weights=weight_mode, include_top=False,
+                                  input_tensor=input_layer, input_shape=input_shape)
+    resnet_base_model = ResNet50(weights=weight_mode, include_top=False,
+                                 input_tensor=input_layer, input_shape=input_shape)
 
     for layer in resnet_base_model.layers:
         layer.name = layer.name + 'res'
@@ -96,14 +96,14 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=1024, weight_mode
     x = Concatenate()([x1, x2, x3, x4])
 
     x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
-    embedding_model = Model([mobile_base_model.input, resnet_base_model.input], x, name="embedding")
+    embedding_model = Model(input_layer, x, name="embedding")
 
     anchor_input = Input(input_shape, name='anchor_input')
     positive_input = Input(input_shape, name='positive_input')
     negative_input = Input(input_shape, name='negative_input')
-    anchor_embedding = embedding_model([anchor_input, anchor_input])
-    positive_embedding = embedding_model([positive_input, positive_input])
-    negative_embedding = embedding_model([negative_input, negative_input])
+    anchor_embedding = embedding_model(anchor_input)
+    positive_embedding = embedding_model(positive_input)
+    negative_embedding = embedding_model(negative_input)
 
     inputs = [anchor_input, positive_input, negative_input]
     outputs = [anchor_embedding, positive_embedding, negative_embedding]
