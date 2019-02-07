@@ -42,8 +42,8 @@ def bind_model(model):
         queries, query_vecs, references, reference_vecs = get_feature(model, queries, db)
 
         # l2 normalization
-        query_vecs = l2_normalize(query_vecs)
-        reference_vecs = l2_normalize(reference_vecs)
+        # query_vecs = l2_normalize(query_vecs)
+        # reference_vecs = l2_normalize(reference_vecs)
 
         # Calculate cosine similarity
         sim_matrix = euclidean_distances(query_vecs, reference_vecs)
@@ -106,11 +106,44 @@ def get_feature(model, queries, db):
     return queries, query_vecs, db, reference_vecs
 
 
+def get_train_datagen(aug_mode=False, val_mode=False, val_ratio=0.1):
+    datagen = None
+    if aug_mode:
+        if val_mode:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255,
+                validation_split=val_ratio,
+                horizontal_flip=True,
+                shear_range=0.05,
+                zoom_range=0.1,
+                rotation_range=10
+            )
+        else:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255,
+                horizontal_flip=True,
+                shear_range=0.05,
+                zoom_range=0.1,
+                rotation_range=10
+            )
+    else:
+        if val_mode:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255,
+                validation_split=val_ratio
+            )
+        else:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255
+            )
+    return datagen
+
+
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
 
     # hyperparameters
-    args.add_argument('--epoch', type=int, default=5)
+    args.add_argument('--nb_epoch', type=int, default=1000)
     args.add_argument('--batch_size', type=int, default=32)
     args.add_argument('--num_classes', type=int, default=1383)
 
@@ -122,10 +155,11 @@ if __name__ == '__main__':
     config = args.parse_args()
 
     # training parameters
-    val_mode = True
+    aug_mode = True
+    val_mode = False
     val_ratio = 0.1
     learning_rate = 0.00005
-    nb_epoch = 150
+    nb_epoch = config.nb_epoch
     batch_size = 32
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape
@@ -134,8 +168,8 @@ if __name__ == '__main__':
     embedding_model, model = get_siamese_model(input_shape=input_shape, embedding_dim=2048, weight_mode='imagenet')
     embedding_model.summary()
     model.summary()
-    set_embedding_model(embedding_model)
-    bind_model(embedding_model)
+    set_embedding_model(embedding_model)    # for generator
+    bind_model(embedding_model)             # for nsml
 
     if config.pause:
         nsml.paused(scope=locals())
@@ -152,15 +186,9 @@ if __name__ == '__main__':
 
         print('dataset path', DATASET_PATH)
 
-        if val_mode:
-            train_datagen = ImageDataGenerator(
-                rescale=1. / 255,
-                validation_split=val_ratio
-            )
-        else:
-            train_datagen = ImageDataGenerator(
-                rescale=1. / 255
-            )
+        train_datagen = get_train_datagen(aug_mode=aug_mode,
+                                          val_mode=val_mode,
+                                          val_ratio=val_ratio)
 
         train_gen = train_datagen.flow_from_directory(
             directory=DATASET_PATH + '/train/train_data',
@@ -173,15 +201,13 @@ if __name__ == '__main__':
         )
         TRAIN_PATH = DATASET_PATH + '/train/train_data/'
         train_generator = generate_samples(train_datagen, train_gen, batch_size, TRAIN_PATH,
-                                           num_classes=num_classes,
                                            input_shape=input_shape,
                                            train_mode="training")
         if val_mode:
             val_generator = generate_samples(train_datagen, train_gen, batch_size, TRAIN_PATH,
-                                             num_classes=num_classes,
                                              input_shape=input_shape,
                                              train_mode="validation",
-                                             class_mode=True)
+                                             random_mode=True)
 
         """ Callback """
         # monitor = 'acc'

@@ -77,9 +77,8 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     x = GlobalAveragePooling2D()(x)
     x = Dropout(0.2)(x)
     x = BatchNormalization()(x)
-
     x = Dense(embedding_dim, name='output_layer')(x)
-
+    x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
     anchor_input = Input(input_shape, name='anchor_input')
@@ -149,37 +148,39 @@ def triplet_loss_np(inputs, dist='sqeuclidean', margin='maxplus'):
     return np.mean(loss)
 
 
-def del_empty_class(image_gen, class_list, input_shape=(224, 224, 3), batch_size=32, path="."):
-    result_list = class_list.copy()
-    class_dict = dict()
+def get_all_generator(image_gen, class_list, input_shape=(224, 224, 3), batch_size=32, path=".", train_mode=None):
+    result_list = []
+    generator_list = []
     for i, c in enumerate(class_list):
-        test_generator1 = image_gen.flow_from_directory(
+        temp_list = class_list.copy()
+        temp_list.remove(c)
+        now_generator = image_gen.flow_from_directory(
             directory=path,
-            subset='validation',
+            subset=train_mode,
             classes=[c],
             target_size=input_shape[:2],
             color_mode="rgb",
-            batch_size=batch_size,
-            class_mode="categorical",
+            batch_size=2,               # batch_size,
+            class_mode="binary",
             shuffle=True,
             seed=42
         )
-        class_dict[c] = len(test_generator1.filenames)
-    for key, value in class_dict.items():
-        if value == 0:
-            result_list.remove(key)
-    return result_list
+        num_file = len(now_generator.filenames)
+        if num_file > 0:
+            result_list.append(c)
+            generator_list.append(now_generator)
+    return result_list, generator_list
 
 
-def generate_samples(image_gen, flow_dir, batch_size=32, path=".", num_classes=1383, input_shape=(224, 224, 3),
-                     class_mode=False, train_mode=None):
+def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(224, 224, 3),
+                     random_mode=False, train_mode=None):
     global g_embedding_model
+    num_sample_space = 1
     class_list = list(flow_dir.class_indices.keys())
-    if train_mode == 'validation':
-        class_list = del_empty_class(image_gen, class_list, input_shape=input_shape, batch_size=batch_size,
-                                     path=path)
+    class_list, gen_list = get_all_generator(image_gen, class_list,
+                                             input_shape=input_shape, batch_size=batch_size,
+                                             path=path, train_mode=train_mode)
     nb_classes = len(class_list)
-    # print(nb_classes)
     now_class = -1
     while True:
         list_anchor = []
@@ -189,84 +190,41 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", num_classes=1
         neg_gen = None
 
         for i in range(batch_size):
-            # class_copy = class_list.copy()
-            while True:
-                if class_mode:
-                    now_class = np.random.randint(nb_classes)
-                else:
-                    now_class = (now_class + 1) % nb_classes
-                pos_gen = image_gen.flow_from_directory(
-                    directory=path,
-                    subset=train_mode,
-                    classes=[class_list[now_class]],
-                    target_size=input_shape[:2],
-                    color_mode="rgb",
-                    batch_size=2,
-                    shuffle=True
-                )
-                if len(pos_gen.filenames) > 0:
-                    break
-
-            while True:
-                neg_class = np.random.randint(nb_classes)
-                while now_class == neg_class:
-                    neg_class = np.random.randint(nb_classes)
-                neg_gen = image_gen.flow_from_directory(
-                    directory=path,
-                    subset=train_mode,
-                    classes=[class_list[neg_class]],
-                    target_size=input_shape[:2],
-                    color_mode="rgb",
-                    batch_size=2,
-                    shuffle=True
-                )
-                if len(neg_gen.filenames) > 0:
-                    break
-
+            # generate positive samples
+            if random_mode:
+                now_class = np.random.randint(nb_classes)
+            else:
+                now_class = (now_class + 1) % nb_classes
+            pos_gen = gen_list[now_class]
             pos_batch, _ = next(pos_gen)
+            for _ in range(1, num_sample_space):
+                pos_sample, _ = next(pos_gen)
+                pos_batch = np.vstack((pos_batch, pos_sample))
+            # print("pos_batch", pos_batch.shape)
+
+            # generate negative samples
+            neg_list = []
+            for _ in range(num_sample_space):
+                neg_class = np.random.randint(nb_classes)
+                while now_class == neg_class or neg_class in neg_list:
+                    neg_class = np.random.randint(nb_classes)
+                neg_list.append(neg_class)
+            neg_gen = gen_list[neg_list[0]]
             neg_batch, _ = next(neg_gen)
+            for ni in range(1, num_sample_space):
+                nc = gen_list[neg_list[ni]]
+                neg_gen = gen_list[nc]
+                neg_sample, _ = next(neg_gen)
+                neg_batch = np.vstack((neg_batch, neg_sample))
+            # print("neg_batch", neg_batch.shape)
+
+            # pick up the anchor, positive, negative sample set
             list_anchor.append(pos_batch[0])
             list_positive.append(pos_batch[-1])
             list_negative.append(neg_batch[0])
 
+        # casting to numpy
         A = np.array(list_anchor)
         B = np.array(list_positive)
         C = np.array(list_negative)
         yield ({'anchor_input': A, 'positive_input': B, 'negative_input': C}, None)
-
-
-''' the part of main eda
-        print(train_generator.class_indices)
-        class_list = list(train_generator.class_indices.keys())
-        
-        class_dict = dict()
-        for i, c in enumerate(class_list):
-            test_generator1 = train_datagen.flow_from_directory(
-                directory=DATASET_PATH + '/train/train_data',
-                subset='training',
-                classes=[c],
-                target_size=input_shape[:2],
-                color_mode="rgb",
-                batch_size=batch_size,
-                class_mode="categorical",
-                shuffle=True,
-                seed=42
-            )
-            test_generator2 = train_datagen.flow_from_directory(
-                directory=DATASET_PATH + '/train/train_data',
-                subset='validation',
-                classes=[c],
-                target_size=input_shape[:2],
-                color_mode="rgb",
-                batch_size=batch_size,
-                class_mode="categorical",
-                shuffle=True,
-                seed=42
-            )
-            class_dict[c] = (len(test_generator1.filenames), len(test_generator2.filenames))
-            if i % 100 == 0:
-                print("done", i, "\n")
-        from pprint import pprint
-        sorted_dict = sorted(class_dict.items(), key=lambda item: item[1][1])
-        pprint(sorted_dict)
-'''
