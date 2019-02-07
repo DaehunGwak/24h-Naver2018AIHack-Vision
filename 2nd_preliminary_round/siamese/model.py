@@ -77,9 +77,8 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     x = GlobalAveragePooling2D()(x)
     x = Dropout(0.2)(x)
     x = BatchNormalization()(x)
-
     x = Dense(embedding_dim, name='output_layer')(x)
-
+    x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
     anchor_input = Input(input_shape, name='anchor_input')

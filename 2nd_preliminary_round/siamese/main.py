@@ -42,8 +42,8 @@ def bind_model(model):
         queries, query_vecs, references, reference_vecs = get_feature(model, queries, db)
 
         # l2 normalization
-        query_vecs = l2_normalize(query_vecs)
-        reference_vecs = l2_normalize(reference_vecs)
+        # query_vecs = l2_normalize(query_vecs)
+        # reference_vecs = l2_normalize(reference_vecs)
 
         # Calculate cosine similarity
         sim_matrix = euclidean_distances(query_vecs, reference_vecs)
@@ -106,6 +106,41 @@ def get_feature(model, queries, db):
     return queries, query_vecs, db, reference_vecs
 
 
+def get_train_datagen(aug_mode=False, val_mode=False, val_ratio=0.1):
+    datagen = None
+    if aug_mode:
+        if val_mode:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255,
+                validation_split=val_ratio,
+                vertical_flip=True,
+                horizontal_flip=True,
+                shear_range=0.1,
+                zoom_range=0.1,
+                rotation_range=20
+            )
+        else:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255,
+                vertical_flip=True,
+                horizontal_flip=True,
+                shear_range=0.1,
+                zoom_range=0.1,
+                rotation_range=20
+            )
+    else:
+        if val_mode:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255,
+                validation_split=val_ratio
+            )
+        else:
+            datagen = ImageDataGenerator(
+                rescale=1. / 255
+            )
+    return datagen
+
+
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
 
@@ -122,6 +157,7 @@ if __name__ == '__main__':
     config = args.parse_args()
 
     # training parameters
+    aug_mode = True
     val_mode = True
     val_ratio = 0.1
     learning_rate = 0.00005
@@ -152,15 +188,9 @@ if __name__ == '__main__':
 
         print('dataset path', DATASET_PATH)
 
-        if val_mode:
-            train_datagen = ImageDataGenerator(
-                rescale=1. / 255,
-                validation_split=val_ratio
-            )
-        else:
-            train_datagen = ImageDataGenerator(
-                rescale=1. / 255
-            )
+        train_datagen = get_train_datagen(aug_mode=aug_mode,
+                                          val_mode=val_mode,
+                                          val_ratio=val_ratio)
 
         train_gen = train_datagen.flow_from_directory(
             directory=DATASET_PATH + '/train/train_data',
