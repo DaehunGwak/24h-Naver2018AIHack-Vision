@@ -157,15 +157,17 @@ if __name__ == '__main__':
     # training parameters
     aug_mode = False
     val_mode = False
+    weight_mode = 'imagenet'
     val_ratio = 0.1
     learning_rate = 0.0001
+    pre_epoch = 3
     nb_epoch = config.nb_epoch
     batch_size = 32
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape
 
     """ Model """
-    embedding_model, model = get_siamese_model(input_shape=input_shape, embedding_dim=2048, weight_mode='imagenet')
+    base_model, embedding_model, model = get_siamese_model(input_shape=input_shape, embedding_dim=2048, weight_mode=weight_mode)
     embedding_model.summary()
     model.summary()
     set_embedding_model(embedding_model)    # for generator
@@ -214,6 +216,24 @@ if __name__ == '__main__':
         # reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3)
 
         """ Training loop """
+        # train classification
+        pre_model = add_classification_dense_model(base_model, num_classes=num_classes)
+        pre_model.compile(loss='categorical_crossentropy',
+                          optimizer=opt,
+                          metrics=['accuracy'])
+        pre_hist_all = []
+        for epoch in range(pre_epoch):
+            res = pre_model.fit_generator(generator=train_gen,
+                                          steps_per_epoch=len(train_gen),
+                                          initial_epoch=epoch,
+                                          epochs=epoch + 1,
+                                          verbose=1,
+                                          shuffle=True)
+            pre_hist_all.append(res)
+            for i, hist in enumerate(pre_hist_all):
+                print(i, hist)
+
+        # train by siamese triplet loss
         STEP_SIZE_TRAIN = num_classes // batch_size
         t0 = time.time()
         hist_all = []

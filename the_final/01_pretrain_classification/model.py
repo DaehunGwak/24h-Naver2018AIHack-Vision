@@ -94,7 +94,17 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     triplet_model = Model(inputs, outputs)
     triplet_model.add_loss(K.mean(triplet_loss(outputs)))
 
-    return embedding_model, triplet_model
+    return base_model, embedding_model, triplet_model
+
+
+def add_classification_dense_model(base_model, num_classes=1383):
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = Dropout(0.2)(x)
+    x = BatchNormalization()(x)
+    predictions = Dense(num_classes, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=predictions)
+    return model
 
 
 def triplet_loss(inputs, dist='sqeuclidean', margin='maxplus'):
