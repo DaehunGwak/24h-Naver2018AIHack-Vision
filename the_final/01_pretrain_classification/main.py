@@ -160,7 +160,7 @@ if __name__ == '__main__':
     weight_mode = 'imagenet'
     val_ratio = 0.1
     learning_rate = 0.0001
-    pre_epoch = 3
+    pre_epoch = 5
     nb_epoch = config.nb_epoch
     batch_size = 32
     num_classes = config.num_classes
@@ -229,9 +229,18 @@ if __name__ == '__main__':
                                           epochs=epoch + 1,
                                           verbose=1,
                                           shuffle=True)
-            pre_hist_all.append(res)
+            pre_hist_all.append(res.history)
             for i, hist in enumerate(pre_hist_all):
                 print(i, hist)
+
+        # freezing
+        for layer in embedding_model.layers[:-2]:
+            layer.trainable = False
+        for i, layer in enumerate(embedding_model.layers):
+            print(i, layer.name, layer.trainable)
+        model.compile(loss=None,
+                      optimizer=opt,
+                      metrics=['accuracy'])
 
         # train by siamese triplet loss
         STEP_SIZE_TRAIN = num_classes // batch_size
