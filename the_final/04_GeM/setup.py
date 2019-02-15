@@ -8,6 +8,7 @@ setup(
     description='nsml vision hackathon',
     install_requires=[
         "sklearn",
-        "tqdm"
+        "tqdm",
+        "image-classifiers"
     ]
 )

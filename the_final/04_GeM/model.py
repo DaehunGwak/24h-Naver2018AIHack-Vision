@@ -9,6 +9,7 @@ from keras.layers import Dropout, BatchNormalization, Lambda, Input
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.mobilenet import MobileNet
 from keras.applications.resnet50 import ResNet50
+from keras.applications.densenet import DenseNet169
 from sklearn.metrics.pairwise import euclidean_distances
 from keras.constraints import max_norm
 from keras.initializers import Constant
@@ -48,7 +49,7 @@ def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
     :param weight_mode:
     :return:
     """
-    base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
+    base_model = DenseNet169(weights=weight_mode, include_top=False, input_shape=input_shape)
     x = base_model.output
     x = BatchNormalization()(x)
     x = GlobalAveragePooling2D()(x)
@@ -61,6 +62,7 @@ def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
     model = Model(base_model.input, x)
     return model
 
+
 def gem(x, p):
     _x = K.clip(x, min_value=1e-10, max_value=1e+20)
     _x = K.pow(_x, p)
@@ -68,7 +70,8 @@ def gem(x, p):
     _x = K.pow(_x, 1. / p)
     return _x
 
-def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode=None, p=3.):
+
+def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode=None, p=2.):
     """
     샴 네트워크를 위해 임베딩 모델과, 트레플렛 학습용 모델을 얻을 수 있다.
     ## 용어정리
@@ -80,28 +83,20 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     :param weight_mode: 'imagenet'을 입력하면 pretrained 모델을 사용할 수 있다.
     :return: embedding_model, triplet_model(a, p, n)
     """
-    base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
-
+    base_model = DenseNet169(weights=weight_mode, include_top=False, input_shape=input_shape)
     variable_p = K.variable(value=K.ones(1) * p, name='p')
-
     x = base_model.output
-    # Best Model
     x = Lambda(gem, arguments={'p': variable_p})(x)
-    # x = GlobalAveragePooling2D()(x)
-    # x = Lambda(lambda _x: print('x[0] :: ', _x[0].shape, 'x[1] :: ', _x[1].shape))((x, variable_p))
-    # x = Lambda(lambda _x: K.clip(_x, min_value=1e-10, max_value=1e+20))(x)
-    # x = Lambda(lambda _x: K.pow(_x[0], _x[1]))((x, variable_p))
-    # x = Lambda(lambda _x: AveragePooling2D(strides=[_x.shape[-2], _x.shape[-1]])(_x))(x)
-    # x = Lambda(lambda _x: K.pow(_x[0], 1. / _x[1]))((x, variable_p))
-    # x = BatchNormalization()(x)
-    # x = GaussianNoise(0.2)(x)
-    # x = Dropout(0.2)(x)
-    # x = Dense(embedding_dim, activation='relu', kernel_initializer='random_uniform')(x)
-    # x = GaussianNoise(0.2)(x)
-    x = Dropout(0.6)(x)
-    x = Dense(embedding_dim, name='output_layer', kernel_initializer=tf.contrib.layers.xavier_initializer())(x)
     x = Flatten()(x)
-    x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
+    default_model = Model(base_model.input, x, name="base")
+
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+    x = Dense(embedding_dim, name='output_layer',
+              kernel_initializer='glorot_normal',
+              use_bias=False,
+              activation='sigmoid')(x)
+    # x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
     anchor_input = Input(input_shape, name='anchor_input')
@@ -117,7 +112,16 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     triplet_model = Model(inputs, outputs)
     triplet_model.add_loss(K.mean(triplet_loss(outputs)))
 
-    return embedding_model, triplet_model
+    return default_model, embedding_model, triplet_model
+
+
+def add_classification_dense_model(base_model, num_classes=1383):
+    x = base_model.output
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+    predictions = Dense(num_classes, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=predictions)
+    return model
 
 
 def triplet_loss(inputs, dist='sqeuclidean', margin='maxplus'):
