@@ -13,6 +13,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 from keras.constraints import max_norm
 from keras.initializers import Constant
 from keras.layers import Layer
+from classification_models.resnext import ResNeXt50
 import keras
 
 g_embedding_model = None
@@ -60,6 +61,13 @@ def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
     model = Model(base_model.input, x)
     return model
 
+def gem(x, p):
+    _x = K.clip(x, min_value=1e-10, max_value=1e+20)
+    _x = K.pow(_x, p)
+    _x = AveragePooling2D(strides=[x.shape[-2], x.shape[-1]])(_x)
+    _x = K.pow(_x, 1. / p)
+    return _x
+
 def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode=None, p=3.):
     """
     샴 네트워크를 위해 임베딩 모델과, 트레플렛 학습용 모델을 얻을 수 있다.
@@ -74,15 +82,17 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     """
     base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
 
-    variable_p = K.variable(K.ones(1) * p)
+    variable_p = K.variable(value=K.ones(1) * p, name='p')
 
     x = base_model.output
     # Best Model
+    x = Lambda(gem, arguments={'p': variable_p})(x)
     # x = GlobalAveragePooling2D()(x)
-    x = Lambda(lambda _x: K.clip(_x, min_value=1e-10, max_value=1e+20))(x)
-    x = Lambda(lambda _x: K.pow(_x[0], _x[1]))([x, variable_p])
-    x = Lambda(lambda _x: AveragePooling2D(strides=[_x.shape[-2], _x.shape[-1]])(_x))(x)
-    x = Lambda(lambda _x: K.pow(_x[0], 1. / _x[1]))([x, variable_p])
+    # x = Lambda(lambda _x: print('x[0] :: ', _x[0].shape, 'x[1] :: ', _x[1].shape))((x, variable_p))
+    # x = Lambda(lambda _x: K.clip(_x, min_value=1e-10, max_value=1e+20))(x)
+    # x = Lambda(lambda _x: K.pow(_x[0], _x[1]))((x, variable_p))
+    # x = Lambda(lambda _x: AveragePooling2D(strides=[_x.shape[-2], _x.shape[-1]])(_x))(x)
+    # x = Lambda(lambda _x: K.pow(_x[0], 1. / _x[1]))((x, variable_p))
     # x = BatchNormalization()(x)
     # x = GaussianNoise(0.2)(x)
     # x = Dropout(0.2)(x)
