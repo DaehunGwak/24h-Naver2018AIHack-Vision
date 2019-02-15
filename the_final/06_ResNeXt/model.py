@@ -13,10 +13,12 @@ from sklearn.metrics.pairwise import euclidean_distances
 from keras.constraints import max_norm
 from keras.initializers import Constant
 from keras.layers import Layer
-from classification_models.resnext import ResNeXt50
+from classification_models.resnext import ResNeXt50, ResNeXt101
+from classification_models.resnet import ResNet18
 import keras
 
 g_embedding_model = None
+
 
 def set_embedding_model(model):
     global g_embedding_model
@@ -61,11 +63,13 @@ def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
     model = Model(base_model.input, x)
     return model
 
+
 def gem(x, p):
     _pow = K.pow(x, p)
     _pow = AveragePooling2D(strides=[x.shape[-2], x.shape[-1]])(x)
     _pow = K.pow(x, 1. / p)
     return _pow
+
 
 def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode=None, p=3.):
     """
@@ -79,26 +83,16 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     :param weight_mode: 'imagenet'을 입력하면 pretrained 모델을 사용할 수 있다.
     :return: embedding_model, triplet_model(a, p, n)
     """
-    base_model = ResNeXt50(weights=weight_mode, include_top=False, input_shape=input_shape)
-
-    variable_p = K.variable(K.ones(1) * p)
+    base_model = ResNet18(weights=weight_mode, include_top=False, input_shape=input_shape)
 
     x = base_model.output
     # Best Model
     x = GlobalAveragePooling2D()(x)
-    # x = Lambda(lambda _x: K.clip(_x, min_value=1e-10, max_value=1e+20))(x)
-    # x = Lambda(lambda _x: K.pow(_x, 3))(x)
-    # x = Lambda(lambda _x: AveragePooling2D(strides=[_x.shape[-2], _x.shape[-1]])(_x))(x)
-    # x = Lambda(lambda _x: K.pow(_x, 1. / 3))(x)
-    # x = gem(x, variable_p)
-    # x = BatchNormalization()(x)
-    # x = GaussianNoise(0.2)(x)
-    # x = Dropout(0.2)(x)
-    # x = Dense(embedding_dim, activation='relu', kernel_initializer='random_uniform')(x)
-    # x = GaussianNoise(0.2)(x)
-    x = Dropout(0.6)(x)
-    x = Dense(embedding_dim, name='output_layer', kernel_initializer=tf.contrib.layers.xavier_initializer())(x)
-    # x = Flatten()(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.4)(x)
+    x = Dense(embedding_dim, name='output_layer',
+              kernel_initializer='glorot_normal',
+              use_bias=False)(x)
     x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
@@ -136,7 +130,6 @@ def triplet_loss(inputs, dist='sqeuclidean', margin='maxplus'):
     :param margin:
     :return:
     """
-
     anchor, positive, negative = inputs
     positive_distance = K.square(anchor - positive)
     negative_distance = K.square(anchor - negative)

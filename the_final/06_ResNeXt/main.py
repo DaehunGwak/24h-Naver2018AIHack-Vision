@@ -160,7 +160,7 @@ if __name__ == '__main__':
     weight_mode = 'imagenet'
     val_ratio = 0.1
     learning_rate = 0.0001
-    pre_epoch = 5
+    pre_epoch = 3
     nb_epoch = config.nb_epoch
     batch_size = 8
     num_classes = config.num_classes
