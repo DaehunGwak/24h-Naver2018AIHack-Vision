@@ -45,11 +45,12 @@ def bind_model(model):
         # query_vecs = l2_normalize(query_vecs)
         # reference_vecs = l2_normalize(reference_vecs)
 
-        # Calculate cosine similarity
-        sim_matrix = euclidean_distances(query_vecs, reference_vecs)
-        sim_matrix = sim_matrix * sim_matrix
+        # Calculate  similarity
+        # sim_matrix = euclidean_distances(query_vecs, reference_vecs)
+        # sim_matrix = sim_matrix * sim_matrix
+        sim_matrix = np.dot(query_vecs, reference_vecs.T)
         indices = np.argsort(sim_matrix, axis=1)
-        # indices = np.flip(indices, axis=1)
+        indices = np.flip(indices, axis=1)
 
         retrieval_results = {}
 
@@ -160,7 +161,7 @@ if __name__ == '__main__':
     weight_mode = 'imagenet'
     val_ratio = 0.1
     learning_rate = 0.0001
-    pre_epoch = 3
+    pre_epoch = 5
     nb_epoch = config.nb_epoch
     batch_size = 8
     num_classes = config.num_classes
@@ -234,7 +235,7 @@ if __name__ == '__main__':
                 print(i, hist)
 
         # freezing
-        for layer in embedding_model.layers[:-4]:
+        for layer in embedding_model.layers[:-2]:
             layer.trainable = False
         for i, layer in enumerate(embedding_model.layers):
             print(i, layer.name, layer.trainable)

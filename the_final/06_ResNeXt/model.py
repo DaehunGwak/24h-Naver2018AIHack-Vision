@@ -9,6 +9,7 @@ from keras.layers import Dropout, BatchNormalization, Lambda, Input
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.mobilenet import MobileNet
 from keras.applications.resnet50 import ResNet50
+from keras.applications.densenet import DenseNet169
 from sklearn.metrics.pairwise import euclidean_distances
 from keras.constraints import max_norm
 from keras.initializers import Constant
@@ -83,16 +84,16 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     :param weight_mode: 'imagenet'을 입력하면 pretrained 모델을 사용할 수 있다.
     :return: embedding_model, triplet_model(a, p, n)
     """
-    base_model = ResNet18(weights=weight_mode, include_top=False, input_shape=input_shape)
+    base_model = DenseNet169(weights=weight_mode, include_top=False, input_shape=input_shape)
 
     x = base_model.output
     # Best Model
     x = GlobalAveragePooling2D()(x)
     x = BatchNormalization()(x)
-    x = Dropout(0.4)(x)
-    x = Dense(embedding_dim, name='output_layer',
-              kernel_initializer='glorot_normal',
-              use_bias=False)(x)
+    default_model = Model(base_model.input, x, name="base")
+
+    x = Dropout(0.2)(x)
+    x = Dense(embedding_dim, name='output_layer')(x)
     x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
@@ -109,14 +110,12 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     triplet_model = Model(inputs, outputs)
     triplet_model.add_loss(K.mean(triplet_loss(outputs)))
 
-    return base_model, embedding_model, triplet_model
+    return default_model, embedding_model, triplet_model
 
 
 def add_classification_dense_model(base_model, num_classes=1383):
     x = base_model.output
-    x = GlobalAveragePooling2D()(x)
     x = Dropout(0.2)(x)
-    x = BatchNormalization()(x)
     predictions = Dense(num_classes, activation='softmax')(x)
     model = Model(inputs=base_model.input, outputs=predictions)
     return model
