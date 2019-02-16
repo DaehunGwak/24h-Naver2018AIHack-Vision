@@ -42,21 +42,25 @@ def bind_model(model):
         # query_vecs = l2_normalize(query_vecs)
         # reference_vecs = l2_normalize(reference_vecs)
 
-        # Calculate  similarity & Query Expansion
+        # calculate similarity
+        sim_matrix = euclidean_distances(query_vecs, reference_vecs)  # knn
+        sim_matrix = sim_matrix * sim_matrix  # knn
+        # sim_matrix = np.dot(query_vecs, reference_vecs.T)             # cos_sim
+        indices = np.argsort(sim_matrix, axis=1)
+        # indices = np.flip(indices, axis=1)
+
+        # query expansion
         expansion_step = 2
         m_sample = 10
-        sim_matrx = None
         for _ in range(expansion_step):
-            # similarity
+            for i, ind in enumerate(indices):
+                query_vecs[i] = np.mean(reference_vecs[ind[:m_sample]], axis=0)
+            # recalculate
             sim_matrix = euclidean_distances(query_vecs, reference_vecs)    # knn
-            sim_matrix = sim_matrix * sim_matrix
+            sim_matrix = sim_matrix * sim_matrix  # knn
             # sim_matrix = np.dot(query_vecs, reference_vecs.T)             # cos_sim
             indices = np.argsort(sim_matrix, axis=1)
             # indices = np.flip(indices, axis=1)
-
-            # expansion
-            for i, ind in enumerate(indices):
-                query_vecs[i] = np.mean(reference_vecs[ind[:m_sample]], axis=0)
 
         retrieval_results = {}
         for (i, query) in enumerate(queries):
