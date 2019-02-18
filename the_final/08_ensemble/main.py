@@ -30,6 +30,7 @@ def bind_model(model):
         print('model loaded!')
 
     def infer(queries, _):
+        print('infer')
         test_path = DATASET_PATH + '/test/test_data'
 
         db = [os.path.join(test_path, 'reference', path) for path in os.listdir(os.path.join(test_path, 'reference'))]
@@ -46,10 +47,26 @@ def bind_model(model):
         # reference_vecs = l2_normalize(reference_vecs)
 
         # Calculate cosine similarity
-        sim_matrix = euclidean_distances(query_vecs, reference_vecs)
-        sim_matrix = sim_matrix * sim_matrix
+        # sim_matrix = euclidean_distances(query_vecs, reference_vecs)
+        # sim_matrix = sim_matrix * sim_matrix
+        # indices = np.argsort(sim_matrix, axis=1)
+        # # indices = np.flip(indices, axis=1)
+        sim_matrix = np.dot(query_vecs, reference_vecs.T)
         indices = np.argsort(sim_matrix, axis=1)
-        # indices = np.flip(indices, axis=1)
+        indices = np.flip(indices, axis=1)
+
+        # query expansion
+        expansion_step = 5
+        m_sample = 5
+        for _ in range(expansion_step):
+            for i, ind in enumerate(indices):
+                query_vecs[i] = np.mean(reference_vecs[ind[:m_sample]], axis=0)
+            # recalculate
+            # sim_matrix = euclidean_distances(query_vecs, reference_vecs)  # knn
+            # sim_matrix = sim_matrix * sim_matrix  # knn
+            sim_matrix = np.dot(query_vecs, reference_vecs.T)             # cos_sim
+            indices = np.argsort(sim_matrix, axis=1)
+            indices = np.flip(indices, axis=1)
 
         retrieval_results = {}
 
@@ -89,7 +106,7 @@ def get_feature(model, queries, db):
         class_mode=None,
         shuffle=False
     )
-    print('before get query_vecs')
+
     query_vecs = model.predict_generator(query_generator, steps=len(query_generator), verbose=1)
 
     reference_generator = test_datagen.flow_from_directory(
@@ -144,7 +161,7 @@ if __name__ == '__main__':
     args = argparse.ArgumentParser()
 
     # hyperparameters
-    args.add_argument('--nb_epoch', type=int, default=1)
+    args.add_argument('--nb_epoch', type=int, default=1000)
     args.add_argument('--batch_size', type=int, default=32)
     args.add_argument('--num_classes', type=int, default=1383)
 
@@ -161,13 +178,34 @@ if __name__ == '__main__':
     weight_mode = 'imagenet'
     val_ratio = 0.1
     learning_rate = 0.0002
-    pre_epoch = 0
+    pre_epoch = 4
     nb_epoch = config.nb_epoch
-    batch_size = 64
+    batch_size = 32
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape
 
     """ Model """
+    opt = keras.optimizers.Adam(lr=learning_rate)
+
+    mobile_backbone_model, dense_backbone_model, pre_model = \
+        add_classification_dense_model(num_classes=num_classes, input_shape=input_shape)
+
+    pre_model.summary()
+
+    pre_model.compile(loss='categorical_crossentropy',
+                      optimizer=opt,
+                      metrics=['accuracy'])
+
+    embedding_model, model = get_siamese_model(mobile_backbone_model, dense_backbone_model,
+                                               input_shape=input_shape, embedding_dim=2048, p=3.0)
+    embedding_model.summary()
+    model.summary()
+    set_embedding_model(embedding_model)  # for generator
+    bind_model(embedding_model)  # for nsml
+
+    model.compile(loss=None,
+                  optimizer=opt,
+                  metrics=['accuracy'])
 
     if config.pause:
         nsml.paused(scope=locals())
@@ -177,7 +215,6 @@ if __name__ == '__main__':
         bTrainmode = True
 
         """ Initiate Adam optimizer """
-        opt = keras.optimizers.Adam(lr=learning_rate)
 
         print('dataset path', DATASET_PATH)
 
@@ -210,24 +247,7 @@ if __name__ == '__main__':
 
         """ Training loop """
         # train classification
-        mobile_backbone_model, dense_backbone_model, pre_model = \
-            add_classification_dense_model(num_classes=num_classes, input_shape=input_shape)
 
-        pre_model.summary()
-
-        pre_model.compile(loss='categorical_crossentropy',
-                          optimizer=opt,
-                          metrics=['accuracy'])
-
-        embedding_model, model = get_siamese_model(mobile_backbone_model, dense_backbone_model, input_shape=input_shape, embedding_dim=2048, p=3.0)
-        embedding_model.summary()
-        model.summary()
-        set_embedding_model(embedding_model)  # for generator
-        bind_model(embedding_model)  # for nsml
-
-        model.compile(loss=None,
-                      optimizer=opt,
-                      metrics=['accuracy'])
 
         pre_hist_all = []
         for epoch in range(pre_epoch):
@@ -278,6 +298,8 @@ if __name__ == '__main__':
                                           max_queue_size=1,
                                           workers=0,
                                           use_multiprocessing=False)
+
+
             t2 = time.time()
             hist_all.append(res.history)
             for i, hist in enumerate(hist_all):
