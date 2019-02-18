@@ -177,8 +177,8 @@ if __name__ == '__main__':
     val_mode = False
     weight_mode = 'imagenet'
     val_ratio = 0.1
-    learning_rate = 0.0002
-    pre_epoch = 4
+    learning_rate = 0.0001
+    pre_epoch = 3
     nb_epoch = config.nb_epoch
     batch_size = 32
     num_classes = config.num_classes
@@ -187,15 +187,22 @@ if __name__ == '__main__':
     """ Model """
     opt = keras.optimizers.Adam(lr=learning_rate)
 
-    mobile_backbone_model, dense_backbone_model, pre_model = \
+    # classification
+    mobile_backbone_model, dense_backbone_model, dense_model, mobile_model = \
         add_classification_dense_model(num_classes=num_classes, input_shape=input_shape)
 
-    pre_model.summary()
+    dense_model.summary()
+    mobile_model.summary()
 
-    pre_model.compile(loss='categorical_crossentropy',
+    dense_model.compile(loss='categorical_crossentropy',
                       optimizer=opt,
                       metrics=['accuracy'])
 
+    mobile_model.compile(loss='categorical_crossentropy',
+                        optimizer=opt,
+                        metrics=['accuracy'])
+
+    # metric learning
     embedding_model, model = get_siamese_model(mobile_backbone_model, dense_backbone_model,
                                                input_shape=input_shape, embedding_dim=2048, p=3.0)
     embedding_model.summary()
@@ -251,7 +258,14 @@ if __name__ == '__main__':
 
         pre_hist_all = []
         for epoch in range(pre_epoch):
-            res = pre_model.fit_generator(generator=train_gen,
+            res = dense_model.fit_generator(generator=train_gen,
+                                                steps_per_epoch=len(train_gen),
+                                                initial_epoch=epoch,
+                                                epochs=epoch + 1,
+                                                verbose=1,
+                                                shuffle=True)
+
+            mobile_model.fit_generator(generator=train_gen,
                                           steps_per_epoch=len(train_gen),
                                           initial_epoch=epoch,
                                           epochs=epoch + 1,

@@ -73,53 +73,16 @@ def get_siamese_model(mobile_backbone_model, dense_backbone_model, input_shape=(
     """
 
     input_layer_metric = Input(shape=input_shape, name='metric_input')
-    # mobile_base_model = MobileNet(weights=weight_mode, include_top=False,
-    #                               input_tensor=input_layer, input_shape=input_shape)
-    # dense_base_model = DenseNet169(weights=weight_mode, include_top=False,
-    #                              input_tensor=input_layer, input_shape=input_shape)
-    #
-    # for layer in dense_base_model.layers:
-    #     layer.name = layer.name + '_DenseNet'
-
-    # mobile_base_out = mobile_backbone_model(inputs=input_layer)
-    # dense_base_out = dense_backbone_model(inputs=input_layer)
 
     mobile_base_out = mobile_backbone_model(input_layer_metric)
     dense_base_out = dense_backbone_model(input_layer_metric)
 
-    # mobile_base_out = mobile_base_model.output
-    # dense_base_out = dense_base_model.output
-    # Best Model
-    # mobile_base_out = GlobalAveragePooling2D()(mobile_base_out)
-    # mobile_base_out = Dropout(0.2)(mobile_base_out)
-    # mobile_base_out = BatchNormalization()(mobile_base_out)
     mobile_base_out = Dense(embedding_dim, name='mobileNet')(mobile_base_out)
-
-    # dense_base_out = GlobalAveragePooling2D()(dense_base_out)
-    # dense_base_out = Dropout(0.2)(dense_base_out)
-    # dense_base_out = BatchNormalization()(dense_base_out)
     dense_base_out = Dense(embedding_dim, name='denseNet')(dense_base_out)
 
-    # x1 = Lambda(lambda x: x[0] * x[1])([mobile_base_out, dense_base_out])
     x = Lambda(lambda _x: _x[0] + _x[1], name='metric_lambda1')([mobile_base_out, dense_base_out])
-    # x = Concatenate()([x1, x2])
-
-    # base_model = DenseNet169(weights=weight_mode, include_top=False, input_shape=input_shape)
-    #
-    # x = base_model.output
-    # x = BatchNormalization()(x)
-    #
-    # variable_p = K.variable(K.random_uniform(1, minval=0.9, maxval=1.1) * p)
-    #
-    # # Best Model
-    # x = Lambda(gem, arguments={'p': variable_p})(x)
-    # x = Flatten()(x)
-    # x = GlobalAveragePooling2D()(x)
-    # x = BatchNormalization()(x)
-    # x = Dropout(0.2)(x)
-    # x = Dense(embedding_dim, name='output_layer')(x)
     x = Lambda(lambda _x: K.l2_normalize(_x, axis=1), name='metric_lambda2')(x)
-    # embedding_model = Model(base_model.input, x, name="embedding")
+
     embedding_model = Model(input_layer_metric, x, name="embedding")
 
     anchor_input = Input(input_shape, name='anchor_input')
@@ -158,6 +121,7 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
     dense_base_output = BatchNormalization()(dense_base_output)
     dense_backbone_model = Model(dense_base_model.input, dense_base_output, name='dense_backbone')
     predictions_dense = Dense(num_classes, activation='softmax')(dense_base_output)
+    dense_model = Model(inputs=dense_backbone_model.input, outputs=predictions_dense)
 
     mobile_base_output = mobile_base_model.output
     mobile_base_output = GlobalAveragePooling2D()(mobile_base_output)
@@ -165,11 +129,9 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
     mobile_base_output = BatchNormalization()(mobile_base_output)
     mobile_backbone_model = Model(mobile_base_model.input, mobile_base_output, name='mobile_backbone')
     predictions_mobile = Dense(num_classes, activation='softmax')(mobile_base_output)
+    mobile_model = Model(inputs=mobile_base_model.input, outputs=predictions_mobile)
 
-    predictions = Lambda(lambda x: (x[0] + x[1]) / 2, name='classification_lambda')([predictions_dense, predictions_mobile])
-
-    model = Model(inputs=input_layer, outputs=predictions)
-    return mobile_backbone_model, dense_backbone_model, model
+    return mobile_backbone_model, dense_backbone_model, dense_model, mobile_model
 
 
 def triplet_loss(inputs, dist='sqeuclidean', margin='maxplus'):
