@@ -85,7 +85,7 @@ if __name__ == '__main__':
     embedding_model.summary()
     model.summary()
     set_embedding_model(embedding_model)    # for generator
-    bind_model(embedding_model)             # for nsml
+    bind_model(get_feature_model())             # for nsml
 
     if config.pause:
         nsml.paused(scope=locals())
@@ -150,10 +150,12 @@ if __name__ == '__main__':
                 print(i, hist)
 
         # freezing
+        """
         for layer in embedding_model.layers[:-2]:
             layer.trainable = False
         for i, layer in enumerate(embedding_model.layers):
             print(i, layer.name, layer.trainable)
+        """
         model.compile(loss=None,
                       optimizer=opt,
                       metrics=['accuracy'])
