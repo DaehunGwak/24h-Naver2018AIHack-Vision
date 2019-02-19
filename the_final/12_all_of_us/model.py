@@ -9,7 +9,7 @@ from keras.layers import Dropout, BatchNormalization, Lambda, Input
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.mobilenet import MobileNet
 from keras.applications.resnet50 import ResNet50
-from keras.applications.densenet import DenseNet169
+from keras.applications.densenet import DenseNet169, DenseNet201
 from sklearn.metrics.pairwise import euclidean_distances
 from keras.constraints import max_norm
 from keras.initializers import Constant
@@ -104,16 +104,16 @@ def get_siamese_model(mobile_backbone_model, dense_backbone_model, input_shape=(
 def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), weight_mode='imagenet'):
 
     input_layer = Input(shape=input_shape, name='classification_input')
-    mobile_base_model = MobileNet(weights=weight_mode, include_top=False,
+    mobile_base_model = DenseNet201(weights=weight_mode, include_top=False,
                                   input_tensor=input_layer, input_shape=input_shape)
     dense_base_model = DenseNet169(weights=weight_mode, include_top=False,
                                    input_tensor=input_layer, input_shape=input_shape)
 
     for layer in dense_base_model.layers[1:]:
-        layer.name = layer.name + '_DenseNet'
+        layer.name = layer.name + '_DenseNet169'
 
     for layer in mobile_base_model.layers[1:]:
-        layer.name = layer.name + '_MobileNet'
+        layer.name = layer.name + '_DenseNet201'
 
     dense_base_output = dense_base_model.output
     dense_base_output = GlobalAveragePooling2D()(dense_base_output)

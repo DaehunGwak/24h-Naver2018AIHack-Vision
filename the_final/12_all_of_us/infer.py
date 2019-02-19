@@ -48,8 +48,8 @@ def bind_model(model):
         indices = np.flip(indices, axis=1)
 
         # query expansion
-        expansion_step = 7
-        m_sample = 3
+        expansion_step = 10
+        m_sample = 5
         for _ in range(expansion_step):
             for i, ind in enumerate(indices):
                 query_vecs[i] = np.mean(
