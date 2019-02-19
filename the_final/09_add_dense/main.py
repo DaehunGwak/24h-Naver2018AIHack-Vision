@@ -132,6 +132,8 @@ if __name__ == '__main__':
         """ Training loop """
         # train classification
         pre_model = add_classification_dense_model(base_model, num_classes=num_classes)
+        print("\n\nClassifciation Model Summery\n")
+        pre_model.summary()
         pre_model.compile(loss='categorical_crossentropy',
                           optimizer=opt,
                           metrics=['accuracy'])

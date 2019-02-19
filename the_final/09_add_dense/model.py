@@ -9,7 +9,7 @@ from keras.layers import Dropout, BatchNormalization, Lambda, Input
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.mobilenet import MobileNet
 from keras.applications.resnet50 import ResNet50
-from keras.applications.densenet import DenseNet169
+from keras.applications.densenet import DenseNet169, DenseNet201
 from sklearn.metrics.pairwise import euclidean_distances
 from keras.constraints import max_norm
 from keras.initializers import Constant
@@ -30,48 +30,6 @@ def set_embedding_model(model):
     return True
 
 
-def subblock(x, filter, **kwargs):
-    x = BatchNormalization()()
-    y = x
-    y = Conv2D(filter, (1, 1), activation='relu', **kwargs)(y)
-    y = BatchNormalization()(y)
-    y = Conv2D(filter, (3, 3), activation='relu', **kwargs)(y)
-    y = BatchNormalization()(y)
-    y = Conv2D(K.int_shape(x)[-1], (1, 1), **kwargs)(y)
-    y = Add()([x, y])
-    y = Activation('relu')(y)
-    return y
-
-
-def get_model(input_shape=(224, 224, 3), num_classes=1383, weight_mode=None):
-    """
-    공인 CNN 불러오기
-    :param input_shape:
-    :param num_classes:
-    :param weight_mode:
-    :return:
-    """
-    base_model = MobileNet(weights=weight_mode, include_top=False, input_shape=input_shape)
-    x = base_model.output
-    x = BatchNormalization()(x)
-    x = GlobalAveragePooling2D()(x)
-    #  = Reshape([-1, 1, 1024])(x)
-    x = Dropout(0.2)(x)
-    # x = Conv2D(num_classes, kernel_size=[1, 1])(x)
-    x = Dense(num_classes)(x)
-    # x = Flatten()(x)
-    x = Activation(activation='softmax', name='output_layer')(x)
-    model = Model(base_model.input, x)
-    return model
-
-
-def gem(x, p):
-    _pow = K.pow(x, p)
-    _pow = AveragePooling2D(strides=[x.shape[-2], x.shape[-1]])(x)
-    _pow = K.pow(x, 1. / p)
-    return _pow
-
-
 def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode=None, p=3.):
     """
     샴 네트워크를 위해 임베딩 모델과, 트레플렛 학습용 모델을 얻을 수 있다.
@@ -87,13 +45,12 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
     base_model = DenseNet169(weights=weight_mode, include_top=False, input_shape=input_shape)
 
     x = base_model.output
-    # Best Model
     x = GlobalAveragePooling2D()(x)
     x = BatchNormalization()(x)
-    default_model = Model(base_model.input, x, name="base")
-
     x = Dropout(0.2)(x)
     x = Dense(embedding_dim, name='output_layer')(x)
+    default_model = Model(base_model.input, x, name="base")
+
     x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
@@ -115,6 +72,7 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
 
 def add_classification_dense_model(base_model, num_classes=1383):
     x = base_model.output
+    x = Activation(activation='relu')(x)
     x = Dropout(0.2)(x)
     predictions = Dense(num_classes, activation='softmax')(x)
     model = Model(inputs=base_model.input, outputs=predictions)

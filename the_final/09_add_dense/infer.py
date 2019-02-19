@@ -38,10 +38,6 @@ def bind_model(model):
 
         queries, query_vecs, references, reference_vecs = get_feature(model, queries, db)
 
-        # l2 normalization
-        # query_vecs = l2_normalize(query_vecs)
-        # reference_vecs = l2_normalize(reference_vecs)
-        감다
         # calculate similarity
         sim_matrix = np.dot(query_vecs, reference_vecs.T)               # cos_sim
         indices = np.argsort(sim_matrix, axis=1)
