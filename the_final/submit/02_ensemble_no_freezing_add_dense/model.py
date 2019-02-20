@@ -127,6 +127,7 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
     dense_backbone_model = Model(dense_base_model.input, dense_base_output, name='dense_backbone')
 
     dense_base_output = Activation(activation='relu')(dense_base_output)
+    dense_base_output = Dropout(0.2)(dense_base_output)
     predictions_dense = Dense(num_classes, activation='softmax')(dense_base_output)
     dense_model = Model(inputs=dense_backbone_model.input, outputs=predictions_dense)
 
@@ -138,6 +139,7 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
     mobile_backbone_model = Model(mobile_base_model.input, mobile_base_output, name='mobile_backbone')
 
     mobile_base_output = Activation(activation='relu')(mobile_base_output)
+    mobile_base_output = Dropout(0.2)(mobile_base_output)
     predictions_mobile = Dense(num_classes, activation='softmax')(mobile_base_output)
     mobile_model = Model(inputs=mobile_base_model.input, outputs=predictions_mobile)
 
