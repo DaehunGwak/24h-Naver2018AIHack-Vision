@@ -211,7 +211,8 @@ def get_all_generator(image_gen, class_list, input_shape=(224, 224, 3), batch_si
 def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(224, 224, 3),
                      random_mode=False, train_mode=None):
     global g_embedding_model
-    num_neg_class = 4
+    num_neg_class = 8
+    cnt_max = 5
     class_list = list(flow_dir.class_indices.keys())
     class_list, gen_list = get_all_generator(image_gen, class_list,
                                              input_shape=input_shape, batch_size=batch_size,
@@ -242,7 +243,9 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
 
             neg_argmin = pos_argmax - 1
             global_min = neg_argmin
+            cnt = 0
             while neg_argmin < pos_argmax:
+                cnt += 1
                 # generate negative samples
                 neg_list = []
                 for _ in range(num_neg_class):
@@ -256,11 +259,13 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
                     neg_gen = gen_list[neg_list[ni]]
                     neg_sample, _ = next(neg_gen)
                     neg_batch = np.vstack((neg_batch, neg_sample))
-
                 # negative distance
                 neg_vec = g_embedding_model.predict(neg_batch)
                 neg_dis = euclidean_distances(anchor_vec, neg_vec)
                 neg_argmin = np.argmin(neg_dis)
+                # exit being max iteration
+                if cnt >= cnt_max:
+                    break
 
             # pick up the anchor, positive, negative sample set
             list_anchor.append(pos_batch[0])

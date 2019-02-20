@@ -73,10 +73,10 @@ if __name__ == '__main__':
     val_mode = False
     weight_mode = 'imagenet'
     val_ratio = 0.1
-    learning_rate = 0.0002
+    learning_rate = 0.0001
     pre_epoch = 4
     nb_epoch = config.nb_epoch
-    batch_size = 32
+    batch_size = 16
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape
 
@@ -86,6 +86,7 @@ if __name__ == '__main__':
     # classification
     mobile_backbone_model, dense_backbone_model, dense_model, mobile_model = \
         add_classification_dense_model(num_classes=num_classes, input_shape=input_shape)
+
 
     dense_model.summary()
     mobile_model.summary()
