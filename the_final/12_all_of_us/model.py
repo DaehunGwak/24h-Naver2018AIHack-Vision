@@ -4,7 +4,7 @@ import numpy as np
 import keras.backend as K
 from keras.models import Sequential, Model
 from keras.layers import Dense, Dropout, Flatten, Activation, Add
-from keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D, Reshape, GaussianNoise, AveragePooling2D
+from keras.layers import Conv2D, MaxPooling2D, AveragePooling2D, Reshape, GaussianNoise, AveragePooling2D
 from keras.layers import Dropout, BatchNormalization, Lambda, Input
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.mobilenet import MobileNet
@@ -242,7 +242,6 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
             pos_argmax = np.argmax(pos_dis)
 
             neg_argmin = pos_argmax - 1
-            global_min = neg_argmin
             cnt = 0
             while neg_argmin < pos_argmax:
                 cnt += 1
@@ -259,10 +258,12 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
                     neg_gen = gen_list[neg_list[ni]]
                     neg_sample, _ = next(neg_gen)
                     neg_batch = np.vstack((neg_batch, neg_sample))
+                    
                 # negative distance
                 neg_vec = g_embedding_model.predict(neg_batch)
                 neg_dis = euclidean_distances(anchor_vec, neg_vec)
                 neg_argmin = np.argmin(neg_dis)
+
                 # exit being max iteration
                 if cnt >= cnt_max:
                     break
