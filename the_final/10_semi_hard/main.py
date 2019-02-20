@@ -73,10 +73,10 @@ if __name__ == '__main__':
     val_mode = False
     weight_mode = 'imagenet'
     val_ratio = 0.1
-    learning_rate = 0.0003
+    learning_rate = 0.0002
     pre_epoch = 5
     nb_epoch = config.nb_epoch
-    batch_size = 8
+    batch_size = 16
     num_classes = config.num_classes
     input_shape = (224, 224, 3)  # input image shape
 
@@ -150,8 +150,8 @@ if __name__ == '__main__':
                 print(i, hist)
 
         # freezing
-        for layer in embedding_model.layers[:-2]:
-            layer.trainable = False
+        # for layer in embedding_model.layers[:-2]:
+        #    layer.trainable = False
         for i, layer in enumerate(embedding_model.layers):
             print(i, layer.name, layer.trainable)
         model.compile(loss=None,

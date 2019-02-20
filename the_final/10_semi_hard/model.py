@@ -19,7 +19,7 @@ from classification_models.resnet import ResNet18
 import keras
 
 g_embedding_model = None
-g_feature_model = None
+
 
 def set_embedding_model(model):
     global g_embedding_model
@@ -28,20 +28,6 @@ def set_embedding_model(model):
     except:
         return False
     return True
-
-
-def set_feature_model(model):
-    global g_feature_model
-    try:
-        g_feature_model = model
-    except:
-        return False
-    return True
-
-
-def get_feature_model():
-    global g_feature_model
-    return g_feature_model
 
 
 def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode=None, p=3.):
@@ -61,14 +47,11 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
 
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
-    feature_model = Model(base_model.input, x, name="feature")
-    set_feature_model(feature_model)
-
     x = BatchNormalization()(x)
     x = Dropout(0.2)(x)
+    x = Dense(embedding_dim, name='output_layer')(x)
     default_model = Model(base_model.input, x, name="base")
 
-    x = Dense(embedding_dim, name='output_layer')(x)
     x = Lambda(lambda _x: K.l2_normalize(_x, axis=1))(x)
     embedding_model = Model(base_model.input, x, name="embedding")
 
@@ -90,6 +73,8 @@ def get_siamese_model(input_shape=(224, 224, 3), embedding_dim=2048, weight_mode
 
 def add_classification_dense_model(base_model, num_classes=1383):
     x = base_model.output
+    x = Activation(activation='relu')(x)
+    x = Dropout(0.2)(x)
     predictions = Dense(num_classes, activation='softmax')(x)
     model = Model(inputs=base_model.input, outputs=predictions)
     return model
@@ -173,6 +158,7 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
                      random_mode=False, train_mode=None):
     global g_embedding_model
     num_neg_class = 4
+    cnt_max = 5
     class_list = list(flow_dir.class_indices.keys())
     class_list, gen_list = get_all_generator(image_gen, class_list,
                                              input_shape=input_shape, batch_size=batch_size,
@@ -203,6 +189,7 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
 
             neg_argmin = pos_argmax - 1
             global_min = neg_argmin
+            cnt = 0
             while neg_argmin < pos_argmax:
                 # generate negative samples
                 neg_list = []
@@ -222,6 +209,10 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
                 neg_vec = g_embedding_model.predict(neg_batch)
                 neg_dis = euclidean_distances(anchor_vec, neg_vec)
                 neg_argmin = np.argmin(neg_dis)
+
+                # exit being max iteration
+                if cnt >= cnt_max:
+                    break
 
             # pick up the anchor, positive, negative sample set
             list_anchor.append(pos_batch[0])
