@@ -184,8 +184,8 @@ if __name__ == '__main__':
                 print(i, hist)
 
         # freezing
-        # for layer in embedding_model.layers[:-5]:
-        #     layer.trainable = False
+        for layer in embedding_model.layers[:-5]:
+            layer.trainable = False
         for i, layer in enumerate(embedding_model.layers):
             print(i, layer.name, layer.trainable)
         model.compile(loss=None,
@@ -237,3 +237,11 @@ if __name__ == '__main__':
                     continue
                 break
         print('Total training time : %.1f' % (time.time() - t0))
+
+    while True:
+        try:
+            nsml.save(0)
+        except:
+            print("!!! NSML SAVE ERROR !!!, so retry ")
+            continue
+        break
