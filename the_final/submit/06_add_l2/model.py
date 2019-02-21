@@ -124,8 +124,9 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
     dense_base_output = dense_base_model.output
     dense_base_output = GlobalAveragePooling2D()(dense_base_output)
     dense_base_output = Dropout(0.2)(dense_base_output)
-    dense_base_output = BatchNormalization()(dense_base_output)
+
     dense_base_output = Lambda(lambda _x: K.l2_normalize(_x, axis=1), name='metric_lambda2')(dense_base_output)
+    dense_base_output = BatchNormalization()(dense_base_output)
 
     dense_backbone_model = Model(dense_base_model.input, dense_base_output, name='dense_backbone')
     predictions_dense = Dense(num_classes, activation='softmax')(dense_base_output)
@@ -134,8 +135,9 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
     mobile_base_output = mobile_base_model.output
     mobile_base_output = GlobalAveragePooling2D()(mobile_base_output)
     mobile_base_output = Dropout(0.2)(mobile_base_output)
-    mobile_base_output = BatchNormalization()(mobile_base_output)
+
     mobile_base_output = Lambda(lambda _x: K.l2_normalize(_x, axis=1), name='metric_lambda2')(mobile_base_output)
+    mobile_base_output = BatchNormalization()(mobile_base_output)
 
     # mobile_base_output = Dense(2048)(mobile_base_output)
     # mobile_base_output = Activation(activation='relu')(mobile_base_output)
@@ -232,6 +234,7 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
             global_min = neg_argmin
             cnt = 0
             while neg_argmin < pos_argmax:
+                cnt = cnt + 1
                 # generate negative samples
                 neg_list = []
                 for _ in range(num_neg_class):

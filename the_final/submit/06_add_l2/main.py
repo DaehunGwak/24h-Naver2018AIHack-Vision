@@ -174,7 +174,7 @@ if __name__ == '__main__':
     val_mode = False
     weight_mode = 'imagenet'
     val_ratio = 0.1
-    learning_rate = 0.0001
+    learning_rate = 0.00015
     pre_epoch = 5
     nb_epoch = config.nb_epoch
     batch_size = 32
