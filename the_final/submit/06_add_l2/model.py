@@ -123,7 +123,6 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
 
     dense_base_output = dense_base_model.output
     dense_base_output = GlobalAveragePooling2D()(dense_base_output)
-    dense_base_output = Dropout(0.2)(dense_base_output)
 
     dense_base_output = Lambda(lambda _x: K.l2_normalize(_x, axis=1), name='metric_lambda2')(dense_base_output)
     dense_base_output = BatchNormalization()(dense_base_output)
@@ -134,7 +133,6 @@ def add_classification_dense_model(num_classes=1383, input_shape=(224, 224, 3), 
 
     mobile_base_output = mobile_base_model.output
     mobile_base_output = GlobalAveragePooling2D()(mobile_base_output)
-    mobile_base_output = Dropout(0.2)(mobile_base_output)
 
     mobile_base_output = Lambda(lambda _x: K.l2_normalize(_x, axis=1), name='metric_lambda2')(mobile_base_output)
     mobile_base_output = BatchNormalization()(mobile_base_output)
@@ -201,7 +199,6 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
                      random_mode=False, train_mode=None):
     global g_embedding_model
     num_neg_class = 4
-    cnt_max = 5
     class_list = list(flow_dir.class_indices.keys())
     class_list, gen_list = get_all_generator(image_gen, class_list,
                                              input_shape=input_shape, batch_size=batch_size,
@@ -224,39 +221,28 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
             pos_gen = gen_list[now_class]
             pos_batch, _ = next(pos_gen)
 
-            # positive distance
+            # generate negative samples
+            neg_list = []
+            for _ in range(num_neg_class):
+                neg_class = np.random.randint(nb_classes)
+                while now_class == neg_class or neg_class in neg_list:
+                    neg_class = np.random.randint(nb_classes)
+                neg_list.append(neg_class)
+            neg_gen = gen_list[neg_list[0]]
+            neg_batch, _ = next(neg_gen)
+            for ni in range(1, num_neg_class):
+                neg_gen = gen_list[neg_list[ni]]
+                neg_sample, _ = next(neg_gen)
+                neg_batch = np.vstack((neg_batch, neg_sample))
+
+            # distance
             pos_vec = g_embedding_model.predict(pos_batch)
+            neg_vec = g_embedding_model.predict(neg_batch)
             anchor_vec = pos_vec[0].reshape(1, -1)
             pos_dis = euclidean_distances(anchor_vec, pos_vec)
+            neg_dis = euclidean_distances(anchor_vec, neg_vec)
             pos_argmax = np.argmax(pos_dis)
-
-            neg_argmin = pos_argmax - 1
-            global_min = neg_argmin
-            cnt = 0
-            while neg_argmin < pos_argmax:
-                cnt = cnt + 1
-                # generate negative samples
-                neg_list = []
-                for _ in range(num_neg_class):
-                    neg_class = np.random.randint(nb_classes)
-                    while now_class == neg_class or neg_class in neg_list:
-                        neg_class = np.random.randint(nb_classes)
-                    neg_list.append(neg_class)
-                neg_gen = gen_list[neg_list[0]]
-                neg_batch, _ = next(neg_gen)
-                for ni in range(1, num_neg_class):
-                    neg_gen = gen_list[neg_list[ni]]
-                    neg_sample, _ = next(neg_gen)
-                    neg_batch = np.vstack((neg_batch, neg_sample))
-
-                # negative distance
-                neg_vec = g_embedding_model.predict(neg_batch)
-                neg_dis = euclidean_distances(anchor_vec, neg_vec)
-                neg_argmin = np.argmin(neg_dis)
-
-                # exit being max iteration
-                if cnt >= cnt_max:
-                    break
+            neg_argmin = np.argmin(neg_dis)
 
             # pick up the anchor, positive, negative sample set
             list_anchor.append(pos_batch[0])
