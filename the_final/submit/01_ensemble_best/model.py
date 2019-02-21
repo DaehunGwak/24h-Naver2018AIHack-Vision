@@ -229,6 +229,7 @@ def generate_samples(image_gen, flow_dir, batch_size=32, path=".", input_shape=(
             global_min = neg_argmin
             cnt = 0
             while neg_argmin < pos_argmax:
+                cnt = cnt + 1
                 # generate negative samples
                 neg_list = []
                 for _ in range(num_neg_class):

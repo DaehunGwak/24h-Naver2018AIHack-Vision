@@ -237,11 +237,3 @@ if __name__ == '__main__':
                     continue
                 break
         print('Total training time : %.1f' % (time.time() - t0))
-
-    while True:
-        try:
-            nsml.save(0)
-        except:
-            print("!!! NSML SAVE ERROR !!!, so retry ")
-            continue
-        break
